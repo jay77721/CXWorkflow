@@ -1,11 +1,16 @@
-# CXWorkflow
+<h1 align="center">CXWorkflow</h1>
+
+<div align="center">
 
 [![Codex Plugin](https://img.shields.io/badge/Codex-Plugin-111827)](#codex-插件)
 [![Workflow](https://img.shields.io/badge/Workflow-Event--Driven-2563eb)](#事件驱动模型)
 [![Rate Limit Safe](https://img.shields.io/badge/Rate%20Limit-Safe-16a34a)](#限流保护)
+[![Version](https://img.shields.io/badge/version-0.1.0-0ea5e9)](./CHANGELOG.md)
 [![English](https://img.shields.io/badge/README-English-64748b)](./README.en.md)
 
-CXWorkflow 是一套面向 Codex 的多线程开发工作流。它不是追求“Agent 越多越强”，而是用最小必要并发，把 Codex 组织成一个可预测、可恢复、可长期运行的开发团队。
+</div>
+
+CXWorkflow 是一套面向 Codex 的多会话开发工作流。它不是追求”Agent 越多越强”，而是用最小必要并发，把 Codex 组织成一个可预测、可恢复、可长期运行的开发团队。
 
 > 核心原则：CXWorkflow 优先保证可预测协作，而不是最大并发。所有角色通过事件协同，Secretary 作为唯一状态源，Commander 采用感知限流的串行接力调度模式。
 
@@ -39,6 +44,7 @@ Help me set up a CXWorkflow Codex development team for this project.
 
 ## 目录
 
+- [前置条件](#前置条件)
 - [为什么需要 CXWorkflow](#为什么需要-cxworkflow)
 - [架构总览](#架构总览)
 - [核心机制](#核心机制)
@@ -47,7 +53,16 @@ Help me set up a CXWorkflow Codex development team for this project.
 - [限流保护](#限流保护)
 - [Codex 插件](#codex-插件)
 - [一键创建 Prompt](#一键创建-prompt)
+- [汇报格式](#汇报格式)
+- [故障排除](#故障排除)
 - [什么时候使用](#什么时候使用)
+- [贡献与许可](#贡献与许可)
+
+## 前置条件
+
+- **Codex 访问权限**：你需要有 Codex 的使用权限。
+- **插件支持**：Codex 客户端需支持本地插件安装。
+- **网络环境**：确保能够正常访问 Codex API（无 429 限流）。
 
 ## 为什么需要 CXWorkflow
 
@@ -58,8 +73,8 @@ CXWorkflow 的目标不是扩大并发，而是降低混乱：
 | 常见误区 | CXWorkflow 的选择 |
 | --- | --- |
 | Agent 越多越聪明 | 最小必要并发 |
-| 线程互相询问状态 | Secretary 作为唯一事实源 |
-| 所有线程同时运行 | Commander 串行调度 |
+| 会话互相询问状态 | Secretary 作为唯一事实源 |
+| 所有会话同时运行 | Commander 串行调度 |
 | obs 持续巡检 | obs 作为 Watchdog，异常时唤醒 |
 | 429 后继续重试 | 熔断、保存状态、降级恢复 |
 
@@ -85,6 +100,8 @@ flowchart LR
 
 角色只响应事件，不持续互相轮询。
 
+> *流程：Commander 创建任务 → Developer 执行并汇报 → Tester 验证 → Secretary 记录所有事件 → Reporter 在里程碑发布 → obs 监控异常。*
+
 ```mermaid
 sequenceDiagram
     participant C as Commander
@@ -104,7 +121,7 @@ sequenceDiagram
     O-->>C: abnormal event
 ```
 
-| 事件 | 触发者 | 响应者 |
+| 事件 | 来源 | 响应者 |
 | --- | --- | --- |
 | `TaskCreated` | Commander | Developer 读取任务并执行 |
 | `TaskFinished` | Developer | Commander 安排 Tester 验证 |
@@ -147,7 +164,7 @@ obs 正常情况下休眠。只有出现以下事件时唤醒：
 
 默认从 Level 1 开始，只在任务复杂度、风险或持续时间需要时升级。
 
-| 等级 | 启用角色 | 适用场景 |
+| 等级 | 活跃角色 | 适用场景 |
 | --- | --- | --- |
 | Level 0 | Commander | 需求澄清、轻量规划、简单问题 |
 | Level 1 | Commander + Developer | 默认模式，小型实现或修复 |
@@ -222,12 +239,12 @@ CXWorkflow 默认采用最小必要并发，降低 API 429 风险。
 短版：
 
 ```text
-请基于当前项目一键创建 Codex 多线程开发团队：指挥、秘书、开发、测试、汇报、obs。采用事件驱动协作，秘书作为唯一事实源，指挥负责限流感知的串行调度，obs 作为 Watchdog 在异常时纠偏恢复。创建后列出 threadId 和用途，并 pin 这些线程。
+请基于当前项目一键创建 Codex 多会话开发团队：指挥、秘书、开发、测试、汇报、obs。采用事件驱动协作，秘书作为唯一事实源，指挥负责限流感知的串行调度，obs 作为 Watchdog 在异常时纠偏恢复。创建后列出 threadId 和用途，并 pin 这些线程。
 ```
 
 ## 汇报格式
 
-```md
+```text
 # 项目状态
 
 ## 已完成
@@ -246,6 +263,33 @@ CXWorkflow 默认采用最小必要并发，降低 API 429 风险。
 - ...
 ```
 
+## 故障排除
+
+### 插件无法加载
+
+1. 确认插件路径正确：在 Codex 插件管理中检查路径是否指向仓库根目录。
+2. 重启 Codex：新插件安装后需要重启客户端才能加载。
+3. 检查 `plugin.json`：确保 `.codex-plugin/plugin.json` 文件存在且格式正确。
+
+### 会话不响应
+
+1. 检查事件日志：查看 Secretary 会话中的记录，确认事件是否已发出。
+2. 确认 Commander 调度：Commander 负责分配任务，如果它没有发出 `TaskCreated` 事件，其他会话不会主动工作。
+3. 手动触发：在对应会话中手动输入 `/cxworkflow check` 触发状态检查。
+
+### 遇到 429 限流
+
+1. 自动降级：CXWorkflow 会自动降低负载等级，等待冷却。
+2. 手动干预：如果自动恢复失败，在 Commander 会话中输入 `/cxworkflow reset-rate-limit`。
+3. 预防为主：避免在高峰时段使用 Level 3 全角色模式。
+
+### 重置工作流
+
+如果工作流完全卡住，可以：
+
+1. 在 Commander 会话中输入 `/cxworkflow reset` 重置所有状态。
+2. Secretary 会保留历史记录，恢复后可读取之前的上下文。
+
 ## 什么时候使用
 
 适合：
@@ -261,3 +305,9 @@ CXWorkflow 默认采用最小必要并发，降低 API 429 风险。
 - 小型单文件修复。
 - 一次性简单问答。
 - 不需要测试、汇报或长期上下文的任务。
+
+## 贡献与许可
+
+欢迎提交 Issue 和 Pull Request。本项目采用 MIT 许可证 — 详见 [LICENSE](./LICENSE) 文件。
+
+---

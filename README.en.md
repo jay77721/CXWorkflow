@@ -1,9 +1,14 @@
-# CXWorkflow
+<h1 align="center">CXWorkflow</h1>
+
+<div align="center">
 
 [![Codex Plugin](https://img.shields.io/badge/Codex-Plugin-111827)](#codex-plugin)
 [![Workflow](https://img.shields.io/badge/Workflow-Event--Driven-2563eb)](#event-driven-model)
 [![Rate Limit Safe](https://img.shields.io/badge/Rate%20Limit-Safe-16a34a)](#rate-limit-safety)
+[![Version](https://img.shields.io/badge/version-0.1.0-0ea5e9)](./CHANGELOG.md)
 [![中文](https://img.shields.io/badge/README-中文-64748b)](./README.md)
+
+</div>
 
 CXWorkflow is a multi-session Codex development workflow. It does not treat “more agents” as better; it uses minimum necessary concurrency to organize Codex into a predictable, recoverable, long-running development team.
 
@@ -39,15 +44,25 @@ If you do not want to install the plugin yet, copy the [one-click setup prompt](
 
 ## Table Of Contents
 
+- [Prerequisites](#prerequisites)
 - [Why CXWorkflow](#why-cxworkflow)
 - [Architecture](#architecture)
-- [Core Concepts](#core-concepts)
+- [Core Mechanisms](#core-mechanisms)
 - [Team Roles](#team-roles)
 - [Load Levels](#load-levels)
 - [Rate Limit Safety](#rate-limit-safety)
 - [Codex Plugin](#codex-plugin)
 - [One-Click Setup Prompt](#one-click-setup-prompt)
+- [Reporting Format](#reporting-format)
+- [Troubleshooting](#troubleshooting)
 - [When To Use](#when-to-use)
+- [Contributing and License](#contributing-and-license)
+
+## Prerequisites
+
+- **Codex access**: You need an active Codex account with session creation permissions.
+- **Plugin support**: Your Codex client must support local plugin installation.
+- **Network**: Ensure reliable access to the Codex API (avoid peak hours to reduce 429 risk).
 
 ## Why CXWorkflow
 
@@ -85,6 +100,8 @@ flowchart LR
 
 Roles respond to events instead of constantly polling each other.
 
+> *Flow: Commander creates a task → Developer executes and reports → Tester validates → Secretary records all events → Reporter publishes at milestones → obs watches for anomalies.*
+
 ```mermaid
 sequenceDiagram
     participant C as Commander
@@ -104,7 +121,7 @@ sequenceDiagram
     O-->>C: abnormal event
 ```
 
-| Event | Emitted By | Responds |
+| Event | Source | Responds |
 | --- | --- | --- |
 | `TaskCreated` | Commander | Developer reads the task and executes |
 | `TaskFinished` | Developer | Commander schedules Tester |
@@ -227,7 +244,7 @@ Please create a Codex multi-session development team for the current project: Co
 
 ## Reporting Format
 
-```md
+```text
 # Project Status
 
 ## Completed
@@ -246,6 +263,33 @@ Please create a Codex multi-session development team for the current project: Co
 - ...
 ```
 
+## Troubleshooting
+
+### Plugin Won't Load
+
+1. Verify the plugin path: In Codex plugin management, confirm the path points to the repository root.
+2. Restart Codex: New plugins require a client restart to load.
+3. Check `plugin.json`: Ensure `.codex-plugin/plugin.json` exists and is valid JSON.
+
+### Sessions Not Responding
+
+1. Check event logs: Read the Secretary session to confirm events were emitted.
+2. Verify Commander scheduling: Commander must emit `TaskCreated` before other sessions act.
+3. Manual trigger: Type `/cxworkflow check` in the relevant session to force a status check.
+
+### 429 Rate Limit Errors
+
+1. Automatic downgrade: CXWorkflow automatically lowers the load level and waits for cooldown.
+2. Manual recovery: If auto-recovery fails, type `/cxworkflow reset-rate-limit` in the Commander session.
+3. Prevention: Avoid Level 3 full-role mode during peak API hours.
+
+### Reset The Workflow
+
+If the workflow is completely stuck:
+
+1. Type `/cxworkflow reset` in the Commander session to reset all state.
+2. Secretary preserves history — previous context can be read after recovery.
+
 ## When To Use
 
 Use CXWorkflow when:
@@ -261,3 +305,9 @@ Avoid CXWorkflow for:
 - Small one-file fixes.
 - One-off simple questions.
 - Tasks that do not need testing, reporting, or long-running context.
+
+## Contributing and License
+
+Issues and Pull Requests are welcome. This project is licensed under the MIT License — see the [LICENSE](./LICENSE) file for details.
+
+---
