@@ -64,7 +64,7 @@ CXWorkflow separates those responsibilities:
 - Developer owns implementation.
 - Tester owns quality review and risk discovery.
 - Reporter owns progress visibility.
-- Observer owns system-level workflow and structural review.
+- obs owns thread health monitoring and helps the team recover when collaboration drifts off track.
 
 This structure is designed for long-running projects, multi-module features, complex refactors, AI-assisted product development, and any repo where a single chat thread becomes too crowded to manage safely.
 
@@ -77,7 +77,7 @@ This structure is designed for long-running projects, multi-module features, com
 | `Developer` / `开发` | Main engineer | Implements features, fixes bugs, refactors code, verifies changes, and reports results back to Commander and Secretary. |
 | `Tester` / `测试` | QA and reviewer | Reviews code quality, runs tests, finds bugs, checks regression risk, and reports issues by severity. |
 | `Reporter` / `汇报` | Progress reporter | Collects project status from other sessions and produces concise progress reports. |
-| `Observer` / `obs` | External observer | Reviews the whole workflow, checks whether the team structure is complete, and identifies missing roles, process gaps, or strategic risks. |
+| `Observer` / `obs` | Operations observer | Checks whether all sessions are running normally, detects dropped threads, blockers, role drift, or coordination gaps, and helps bring the team back on track. |
 
 ## How It Works
 
@@ -97,7 +97,7 @@ This structure is designed for long-running projects, multi-module features, com
    Reporter summarizes what each thread is doing and gives the human owner a quick project snapshot.
 
 6. Start `Observer`.
-   Observer checks the whole system from a higher level and points out missing coverage, process weaknesses, or architectural concerns.
+   Observer checks whether each session is fulfilling its role, flags abnormal collaboration patterns, and reports recovery suggestions to Commander and Secretary.
 
 ## Recommended One-Click Setup Prompt
 
@@ -124,7 +124,7 @@ Responsibility: You are the tester and code reviewer. Review code quality, run t
 Responsibility: You are the progress reporter. Periodically ask for or read status from other sessions and produce progress reports covering completed work, in-progress work, blockers, risks, and recommended next steps.
 
 6. obs
-Responsibility: You are the observer. Watch the AI development team from a system-level perspective. Check for missing modules, process gaps, missing roles, strategic drift, or quality risks, and propose improvements.
+Responsibility: You are the operations observer. Continuously check whether all sessions are running normally: Commander is coordinating, Secretary is recording, Developer is implementing, Tester is validating, and Reporter is synchronizing status. When a session drops off, drifts from its role, misses important context, leaves blockers unhandled, moves away from the project goal, or breaks the collaboration flow, identify the issue, prompt the relevant session to resume its responsibility, and give Commander and Secretary concrete recovery suggestions so the team returns to a normal operating track.
 
 After creation, list each session's threadId, title, and responsibility, and pin these sessions if possible.
 ```
@@ -132,7 +132,7 @@ After creation, list each session's threadId, title, and responsibility, and pin
 Short version:
 
 ```text
-Please create a Codex multi-session development team for the current project: Commander, Secretary, Developer, Tester, Reporter, and obs. Each session should work in the current repository and separately own project direction, status coordination, implementation, quality review, progress reporting, and system-level observation. After creation, list the threadId and purpose for each session, and pin them.
+Please create a Codex multi-session development team for the current project: Commander, Secretary, Developer, Tester, Reporter, and obs. Each session should work in the current repository and separately own project direction, status coordination, implementation, quality review, progress reporting, thread health checks, and recovery when collaboration drifts off track. After creation, list the threadId and purpose for each session, and pin them.
 ```
 
 ## Suggested Reporting Format

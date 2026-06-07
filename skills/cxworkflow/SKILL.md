@@ -14,7 +14,7 @@ CXWorkflow organizes Codex into a small development team made of specialized ses
 - `开发` / Developer: owns implementation, bug fixes, refactors, and verification.
 - `测试` / Tester: owns QA, code review, test execution, regression risk, and quality reporting.
 - `汇报` / Reporter: owns progress reports, team status snapshots, and next-step summaries.
-- `obs` / Observer: owns system-level observation, missing-role detection, process gaps, and strategic risk review.
+- `obs` / Observer: owns thread health checks, role-drift detection, blocker detection, coordination-gap detection, and recovery suggestions that bring the team back on track.
 
 ## When To Use
 
@@ -53,7 +53,7 @@ When the user asks for a prompt to create the team, provide this:
 职责：你是汇报手。负责定期询问或读取其他线程的状态，生成项目进度报告，包括已完成、进行中、阻塞、风险、下一步建议。
 
 6. obs
-职责：你是观察员。你从全局观察这个 AI 开发团队是否完整，检查项目是否存在遗漏模块、流程断点、角色缺失、战略偏差或质量风险，并提出改进建议。
+职责：你是运行观察员。你要持续检查所有线程是否正常运行，包括指挥是否在统筹、秘书是否在记录、开发是否在实现、测试是否在验证、汇报是否在同步状态。发现线程掉线、职责漂移、信息不同步、阻塞无人处理、任务偏离目标或协作流程失效时，你要指出问题，提醒对应线程恢复职责，并向指挥和秘书给出纠偏建议，帮助团队回到正常轨道。
 
 创建完成后，请把每个 session 的 threadId、标题和职责列出来，并尽量 pin 这些线程。
 ```
@@ -61,7 +61,7 @@ When the user asks for a prompt to create the team, provide this:
 Short version:
 
 ```text
-请基于当前项目一键创建 Codex 多线程开发团队：指挥、秘书、开发、测试、汇报、obs。每个线程都在当前仓库工作，并分别承担项目总控、状态协调、代码实现、质量审查、进度汇总、全局观察职责。创建后列出 threadId 和用途，并 pin 这些线程。
+请基于当前项目一键创建 Codex 多线程开发团队：指挥、秘书、开发、测试、汇报、obs。每个线程都在当前仓库工作，并分别承担项目总控、状态协调、代码实现、质量审查、进度汇总、线程运行检查和纠偏恢复职责。创建后列出 threadId 和用途，并 pin 这些线程。
 ```
 
 ## Operating Rules
@@ -73,7 +73,7 @@ When helping operate a CXWorkflow team:
 3. Route project memory and status tracking to Secretary.
 4. Route validation and review to Tester.
 5. Route summary requests to Reporter.
-6. Route process and strategy review to Observer.
+6. Route thread health checks, role-drift detection, and recovery suggestions to Observer.
 7. Let Commander coordinate priorities and final decisions.
 
 If thread-management tools are available and the user explicitly asks to create sessions, create the sessions directly. Otherwise provide the setup prompt.
