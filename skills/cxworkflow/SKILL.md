@@ -7,6 +7,54 @@ description: Create, explain, or operate a multi-session Codex development team 
 
 CXWorkflow organizes Codex into a small development team made of specialized sessions. Use it when a project needs persistent planning, implementation, testing, reporting, and coordination across multiple Codex threads.
 
+## Core Principle
+
+CXWorkflow prioritizes deterministic coordination over maximum parallelism. Agents communicate through events, Secretary acts as the single source of truth, and Commander schedules work using a rate-limit-aware sequential handoff strategy.
+
+## Event-Driven Operating Model
+
+Prefer event-driven coordination over continuous polling:
+
+- `TaskCreated`: Commander creates a task; Developer executes.
+- `TaskFinished`: Developer finishes; Commander schedules Tester.
+- `TestFailed`: Tester reports failure; Commander assigns Developer a fix.
+- `Blocked`: any session reports a blocker; Commander decides and Secretary records.
+- `MilestoneReached`: Commander or Secretary emits; Reporter summarizes.
+- `RateLimitWarning`: any session reports pressure; Commander lowers concurrency and obs enters Watchdog mode.
+
+Roles should not freely ping each other. Important state goes to Secretary first, then Commander schedules the next action.
+
+## Single Source Of Truth
+
+Secretary is the workflow database. All important events, task states, blockers, test results, decisions, and recovery actions should be written to Secretary. Any role that needs context should read Secretary first instead of asking other sessions directly.
+
+## Load Levels
+
+- Level 0: Commander only. Use for clarification, lightweight planning, or simple questions.
+- Level 1: Commander + Developer. Default mode for small implementation or fixes.
+- Level 2: Commander + Developer + Tester. Use when validation, regression checks, or review are needed.
+- Level 3: Commander + Secretary + Developer + Tester + Reporter + obs. Use for long-running projects, multi-module work, or complex collaboration.
+
+Start at Level 1 by default and increase only when complexity, risk, or duration justifies it.
+
+## Rate Limit Safety And Circuit Breaker
+
+Use minimum necessary concurrency to avoid API 429s:
+
+- Commander is the only scheduling entry point.
+- Developer and Tester use sequential handoff.
+- Secretary, Reporter, and obs join only at stage boundaries, blockers, or abnormal events.
+- Reporter reads Secretary first and avoids frequent polling.
+- obs is a Watchdog: it sleeps during normal operation and wakes only on abnormal events.
+
+Circuit breaker:
+
+- 1 consecutive `429`: Commander lowers the load level and pauses non-essential sessions.
+- 3 consecutive `429`s: stop non-critical roles such as Reporter and obs; keep only Commander and essential execution.
+- 5 consecutive `429`s: Secretary saves state, Commander pauses the workflow, and the team waits for cooldown.
+
+Recovery starts from Secretary's last known state, then Commander resumes from a lower load level.
+
 ## Core Roles
 
 - `指挥` / Commander: owns project direction, task breakdown, priorities, coordination, and acceptance criteria.

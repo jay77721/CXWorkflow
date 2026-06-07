@@ -68,6 +68,70 @@ CXWorkflow 将这些职责拆开：
 
 这套结构适合长期项目、多模块功能、复杂重构、AI 辅助产品开发，以及任何不希望一个聊天线程承担全部工作的代码仓库。
 
+## 核心原则
+
+CXWorkflow 优先保证可预测协作，而不是追求最大并发。所有角色通过事件协同，Secretary 作为唯一状态源，Commander 采用感知限流的串行接力调度模式。
+
+## 事件驱动模型
+
+CXWorkflow 默认使用事件驱动，而不是让所有线程持续运行。角色只在相关事件出现时介入：
+
+| 事件 | 触发者 | 响应者 |
+| --- | --- | --- |
+| `TaskCreated` | Commander | Developer 读取任务并执行 |
+| `TaskFinished` | Developer | Commander 安排 Tester 验证 |
+| `TestFailed` | Tester | Commander 指派 Developer 修复 |
+| `Blocked` | 任意线程 | Commander 决策，Secretary 记录 |
+| `MilestoneReached` | Commander 或 Secretary | Reporter 生成汇报 |
+| `RateLimitWarning` | 任意线程 | Commander 降低并发，obs 进入 Watchdog |
+
+这种模式让线程之间解耦：Developer 不需要直接驱动 Tester，Reporter 不需要到处轮询，所有重要状态先进入 Secretary，再由 Commander 调度下一步。
+
+## 单一事实源
+
+Secretary 是 CXWorkflow 的唯一事实源。所有关键事件、任务状态、阻塞点、测试结果、决策和恢复动作都应写入 Secretary。
+
+任何角色需要上下文时，应优先读取 Secretary，而不是互相询问。这样可以避免 Developer、Tester、Reporter 各自维护一份不同状态，导致后续协作出现幻觉或冲突。
+
+## 负载等级
+
+CXWorkflow 使用负载等级控制成本和 API 请求压力：
+
+| 等级 | 启用角色 | 适用场景 |
+| --- | --- | --- |
+| Level 0 | Commander | 需求澄清、轻量规划、简单问题 |
+| Level 1 | Commander + Developer | 默认模式，适合小型实现或修复 |
+| Level 2 | Commander + Developer + Tester | 需要验证、回归检查或代码审查 |
+| Level 3 | Commander + Secretary + Developer + Tester + Reporter + obs | 长期项目、多模块功能、复杂协作 |
+
+默认从 Level 1 开始。只有当任务复杂度、风险或持续时间需要时，才提升负载等级。
+
+## Rate Limit Safety
+
+为避免触发 API 429，CXWorkflow 默认采用最小必要并发，而不是让所有线程同时运行。
+
+- Commander 是唯一调度入口。
+- Developer 与 Tester 按交付顺序串行接力。
+- Secretary、Reporter、obs 只在阶段节点、阻塞或异常时介入。
+- Reporter 不高频轮询其他线程，优先读取 Secretary。
+- obs 作为 Watchdog，正常情况下休眠，只在异常事件出现时唤醒。
+
+## 熔断机制
+
+当出现 API 限流或明显请求压力时，CXWorkflow 使用熔断机制保护工作流：
+
+| 条件 | 动作 |
+| --- | --- |
+| 连续 1 次 `429` | Commander 降低负载等级，暂停非必要线程 |
+| 连续 3 次 `429` | 停止 Reporter 和 obs 等非关键角色，只保留 Commander 和必要执行线程 |
+| 连续 5 次 `429` | Secretary 保存当前状态，Commander 暂停工作流，等待冷却后恢复 |
+
+恢复流程：
+
+1. Secretary 读取最后状态。
+2. Commander 重新确认当前任务、阻塞和下一步。
+3. 从较低负载等级恢复，而不是直接回到全角色并发。
+
 ## 团队角色
 
 | 线程 | 角色 | 职责 |

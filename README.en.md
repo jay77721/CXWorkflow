@@ -68,6 +68,70 @@ CXWorkflow separates those responsibilities:
 
 This structure is designed for long-running projects, multi-module features, complex refactors, AI-assisted product development, and any repo where a single chat thread becomes too crowded to manage safely.
 
+## Core Principle
+
+CXWorkflow prioritizes deterministic coordination over maximum parallelism. Agents communicate through events, Secretary acts as the single source of truth, and Commander schedules work using a rate-limit-aware sequential handoff strategy.
+
+## Event-Driven Model
+
+CXWorkflow is event-driven by default. Sessions should respond to relevant events instead of running continuously:
+
+| Event | Emitted By | Responds |
+| --- | --- | --- |
+| `TaskCreated` | Commander | Developer reads the task and executes |
+| `TaskFinished` | Developer | Commander schedules Tester |
+| `TestFailed` | Tester | Commander assigns Developer a fix |
+| `Blocked` | Any session | Commander decides, Secretary records |
+| `MilestoneReached` | Commander or Secretary | Reporter generates a report |
+| `RateLimitWarning` | Any session | Commander lowers concurrency, obs enters Watchdog mode |
+
+This keeps roles decoupled: Developer does not directly drive Tester, Reporter does not poll every session, and important state goes through Secretary before Commander schedules the next step.
+
+## Single Source Of Truth
+
+Secretary is the single source of truth for CXWorkflow. All important events, task states, blockers, test results, decisions, and recovery actions should be written to Secretary.
+
+When any role needs context, it should read Secretary first instead of asking other sessions directly. This prevents Developer, Tester, and Reporter from maintaining conflicting local versions of project state.
+
+## Load Levels
+
+CXWorkflow uses load levels to control cost and API pressure:
+
+| Level | Active Roles | Use Case |
+| --- | --- | --- |
+| Level 0 | Commander | Clarification, lightweight planning, simple questions |
+| Level 1 | Commander + Developer | Default mode for small implementation or fixes |
+| Level 2 | Commander + Developer + Tester | Validation, regression checks, or code review |
+| Level 3 | Commander + Secretary + Developer + Tester + Reporter + obs | Long-running projects, multi-module features, complex collaboration |
+
+Start at Level 1 by default. Increase the load level only when task complexity, risk, or duration justifies it.
+
+## Rate Limit Safety
+
+To avoid API 429s, CXWorkflow defaults to minimum necessary concurrency instead of running all sessions at once.
+
+- Commander is the only scheduling entry point.
+- Developer and Tester use sequential handoff.
+- Secretary, Reporter, and obs join only at stage boundaries, blockers, or abnormal events.
+- Reporter avoids frequent polling and reads Secretary first.
+- obs acts as a Watchdog: it sleeps during normal operation and wakes only on abnormal events.
+
+## Circuit Breaker
+
+When rate limits or request pressure appear, CXWorkflow uses a circuit breaker:
+
+| Condition | Action |
+| --- | --- |
+| 1 consecutive `429` | Commander lowers the load level and pauses non-essential sessions |
+| 3 consecutive `429`s | Stop non-critical roles such as Reporter and obs; keep only Commander and essential execution |
+| 5 consecutive `429`s | Secretary saves state, Commander pauses the workflow, and the team waits for cooldown |
+
+Recovery flow:
+
+1. Secretary reads the last known state.
+2. Commander confirms the current task, blockers, and next step.
+3. Resume from a lower load level instead of returning directly to all-role concurrency.
+
 ## Team Roles
 
 | Session | Role | Responsibility |
