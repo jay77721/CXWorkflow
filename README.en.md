@@ -1,43 +1,27 @@
 # CXWorkflow
 
-[中文 README](./README.md)
+[![Codex Plugin](https://img.shields.io/badge/Codex-Plugin-111827)](#codex-plugin)
+[![Workflow](https://img.shields.io/badge/Workflow-Event--Driven-2563eb)](#event-driven-model)
+[![Rate Limit Safe](https://img.shields.io/badge/Rate%20Limit-Safe-16a34a)](#rate-limit-safety)
+[![中文](https://img.shields.io/badge/README-中文-64748b)](./README.md)
 
-CXWorkflow is a multi-session Codex development workflow. It turns one AI coding assistant into a small, persistent development team by giving each Codex thread a clear role, memory boundary, and collaboration responsibility.
+CXWorkflow is a multi-session Codex development workflow. It does not treat “more agents” as better; it uses minimum necessary concurrency to organize Codex into a predictable, recoverable, long-running development team.
 
-This repository is also a Codex plugin. The plugin manifest lives in `.codex-plugin/plugin.json`, and the reusable workflow skill lives in `skills/cxworkflow/SKILL.md`.
+> Core principle: CXWorkflow prioritizes deterministic coordination over maximum parallelism. Agents communicate through events, Secretary acts as the single source of truth, and Commander schedules work using a rate-limit-aware sequential handoff strategy.
 
-## Codex Plugin
-
-This project includes a Codex plugin configuration, so it can be installed and used as a Codex plugin.
-
-- Plugin manifest: `.codex-plugin/plugin.json`
-- Plugin name: `cxworkflow`
-- Display name: `CXWorkflow`
-- Category: `Productivity`
-- Skills directory: `skills/`
-- Workflow skill: `skills/cxworkflow/SKILL.md`
-
-After installation, Codex can discover the CXWorkflow skill and use it when a user wants to create, explain, or operate a multi-session development team. The plugin default prompt is:
-
-```text
-Help me set up a CXWorkflow Codex development team for this project.
-```
-
-## Installation And Usage
+## Quick Start
 
 ### Use As A Codex Plugin
 
-1. Clone this repository locally.
-
+1. Clone this repository.
 2. Add this local plugin in the Codex plugin management UI. The plugin root is the repository root:
 
 ```text
 <your-local-path>/CXWorkflow
 ```
 
-3. After installation, open a new Codex thread so the new plugin skill is loaded.
-
-4. In the new thread, trigger CXWorkflow with a request such as:
+3. Open a new Codex thread after installation so the plugin skill is loaded.
+4. In the new thread, ask:
 
 ```text
 Help me set up a CXWorkflow Codex development team for this project.
@@ -51,30 +35,74 @@ Create a CXWorkflow multi-session development team for the current project.
 
 ### Manual Use
 
-If you do not want to install the plugin yet, copy the one-click setup prompt below into Codex directly. The plugin mainly packages this workflow as a reusable skill so Codex can discover and apply it automatically in relevant situations.
+If you do not want to install the plugin yet, copy the [one-click setup prompt](#one-click-setup-prompt) into Codex directly.
 
-## What It Solves
+## Table Of Contents
 
-A single Codex session is convenient for quick edits and questions, but larger projects often overload one thread with planning, implementation, testing, decision memory, and progress reporting.
+- [Why CXWorkflow](#why-cxworkflow)
+- [Architecture](#architecture)
+- [Core Concepts](#core-concepts)
+- [Team Roles](#team-roles)
+- [Load Levels](#load-levels)
+- [Rate Limit Safety](#rate-limit-safety)
+- [Codex Plugin](#codex-plugin)
+- [One-Click Setup Prompt](#one-click-setup-prompt)
+- [When To Use](#when-to-use)
 
-CXWorkflow separates those responsibilities:
+## Why CXWorkflow
 
-- Commander owns direction and task breakdown.
-- Secretary owns project memory and status synchronization.
-- Developer owns implementation.
-- Tester owns quality review and risk discovery.
-- Reporter owns progress visibility.
-- obs owns thread health monitoring and helps the team recover when collaboration drifts off track.
+A single Codex session works well for quick questions and small edits. In long-running projects, however, one session often ends up planning, implementing, testing, remembering decisions, and reporting progress at the same time. That creates crowded context, inconsistent state, and unnecessary request pressure.
 
-This structure is designed for long-running projects, multi-module features, complex refactors, AI-assisted product development, and any repo where a single chat thread becomes too crowded to manage safely.
+CXWorkflow reduces coordination chaos:
 
-## Core Principle
+| Common Trap | CXWorkflow Choice |
+| --- | --- |
+| More agents means smarter workflow | Minimum necessary concurrency |
+| Sessions ask each other for state | Secretary as single source of truth |
+| Every session runs at once | Commander schedules sequentially |
+| obs polls constantly | obs sleeps as a Watchdog until abnormal events |
+| Keep retrying after 429 | Circuit break, save state, downgrade, recover |
 
-CXWorkflow prioritizes deterministic coordination over maximum parallelism. Agents communicate through events, Secretary acts as the single source of truth, and Commander schedules work using a rate-limit-aware sequential handoff strategy.
+## Architecture
 
-## Event-Driven Model
+```mermaid
+flowchart LR
+    User[Human Owner] --> Commander[Commander<br/>Scheduling and decisions]
+    Commander --> Developer[Developer<br/>Implementation]
+    Commander --> Tester[Tester<br/>Validation]
+    Commander --> Reporter[Reporter<br/>Reporting]
+    Commander --> Secretary[Secretary<br/>Single source of truth]
+    Developer --> Secretary
+    Tester --> Secretary
+    Reporter --> Secretary
+    Watchdog[obs<br/>Watchdog] -.abnormal event.-> Commander
+    Watchdog -.recovery suggestion.-> Secretary
+```
 
-CXWorkflow is event-driven by default. Sessions should respond to relevant events instead of running continuously:
+## Core Concepts
+
+### Event-Driven Model
+
+Roles respond to events instead of constantly polling each other.
+
+```mermaid
+sequenceDiagram
+    participant C as Commander
+    participant D as Developer
+    participant T as Tester
+    participant S as Secretary
+    participant R as Reporter
+    participant O as obs Watchdog
+
+    C->>S: TaskCreated
+    C->>D: assign task
+    D->>S: TaskFinished
+    C->>T: schedule validation
+    T->>S: TestFailed or TestPassed
+    C->>D: assign fix when needed
+    S->>R: MilestoneReached
+    O-->>C: abnormal event
+```
 
 | Event | Emitted By | Responds |
 | --- | --- | --- |
@@ -85,17 +113,39 @@ CXWorkflow is event-driven by default. Sessions should respond to relevant event
 | `MilestoneReached` | Commander or Secretary | Reporter generates a report |
 | `RateLimitWarning` | Any session | Commander lowers concurrency, obs enters Watchdog mode |
 
-This keeps roles decoupled: Developer does not directly drive Tester, Reporter does not poll every session, and important state goes through Secretary before Commander schedules the next step.
+### Secretary Is The Single Source Of Truth
 
-## Single Source Of Truth
+All important events, task states, blockers, test results, decisions, and recovery actions are written to Secretary. Any role that needs context reads Secretary first instead of asking another session directly.
 
-Secretary is the single source of truth for CXWorkflow. All important events, task states, blockers, test results, decisions, and recovery actions should be written to Secretary.
+### Commander Is The Only Scheduler
 
-When any role needs context, it should read Secretary first instead of asking other sessions directly. This prevents Developer, Tester, and Reporter from maintaining conflicting local versions of project state.
+Commander decides who works and when. Developer and Tester use sequential handoff. Reporter and obs join only at milestones, blockers, or abnormal events.
+
+### obs Is A Watchdog
+
+obs sleeps during normal operation. It wakes when one of these events appears:
+
+- No new event for too long
+- Task is stuck or blocker is unhandled
+- Repeated test failures
+- 429 or request pressure
+- Session role drift
+- Context conflict or inconsistent state
+
+## Team Roles
+
+| Session | Role | Primary Responsibility |
+| --- | --- | --- |
+| `Commander` / `指挥` | Project lead | Breaks down goals, schedules sessions, defines priorities and acceptance criteria |
+| `Secretary` / `秘书` | Single source of truth | Records events, task state, decisions, blockers, and recovery actions |
+| `Developer` / `开发` | Main engineer | Implements features, fixes bugs, refactors code, and reports validation results |
+| `Tester` / `测试` | QA and reviewer | Runs tests, reviews quality, and finds regression risks |
+| `Reporter` / `汇报` | Status reporter | Produces progress reports at milestones or on request |
+| `Observer` / `obs` | Watchdog | Detects abnormal workflow state and helps bring the team back on track |
 
 ## Load Levels
 
-CXWorkflow uses load levels to control cost and API pressure:
+Start at Level 1 by default. Increase only when complexity, risk, or duration justifies it.
 
 | Level | Active Roles | Use Case |
 | --- | --- | --- |
@@ -104,27 +154,16 @@ CXWorkflow uses load levels to control cost and API pressure:
 | Level 2 | Commander + Developer + Tester | Validation, regression checks, or code review |
 | Level 3 | Commander + Secretary + Developer + Tester + Reporter + obs | Long-running projects, multi-module features, complex collaboration |
 
-Start at Level 1 by default. Increase the load level only when task complexity, risk, or duration justifies it.
-
 ## Rate Limit Safety
 
-To avoid API 429s, CXWorkflow defaults to minimum necessary concurrency instead of running all sessions at once.
-
-- Commander is the only scheduling entry point.
-- Developer and Tester use sequential handoff.
-- Secretary, Reporter, and obs join only at stage boundaries, blockers, or abnormal events.
-- Reporter avoids frequent polling and reads Secretary first.
-- obs acts as a Watchdog: it sleeps during normal operation and wakes only on abnormal events.
-
-## Circuit Breaker
-
-When rate limits or request pressure appear, CXWorkflow uses a circuit breaker:
+CXWorkflow defaults to minimum necessary concurrency to reduce API 429 risk.
 
 | Condition | Action |
 | --- | --- |
-| 1 consecutive `429` | Commander lowers the load level and pauses non-essential sessions |
-| 3 consecutive `429`s | Stop non-critical roles such as Reporter and obs; keep only Commander and essential execution |
-| 5 consecutive `429`s | Secretary saves state, Commander pauses the workflow, and the team waits for cooldown |
+| Normal operation | Sequential handoff; Reporter and obs do not poll |
+| 1 consecutive `429` | Commander lowers load level and pauses non-essential sessions |
+| 3 consecutive `429`s | Stop Reporter and obs; keep only Commander and essential execution |
+| 5 consecutive `429`s | Secretary saves state, Commander pauses workflow, wait for cooldown |
 
 Recovery flow:
 
@@ -132,40 +171,25 @@ Recovery flow:
 2. Commander confirms the current task, blockers, and next step.
 3. Resume from a lower load level instead of returning directly to all-role concurrency.
 
-## Team Roles
+## Codex Plugin
 
-| Session | Role | Responsibility |
-| --- | --- | --- |
-| `Commander` / `指挥` | Project lead | Understands the whole project, breaks down work, assigns tasks, defines priorities, and makes final direction calls. |
-| `Secretary` / `秘书` | PMO and project memory | Records decisions, tracks task status, keeps cross-thread context synchronized, and prevents project memory loss. |
-| `Developer` / `开发` | Main engineer | Implements features, fixes bugs, refactors code, verifies changes, and reports results back to Commander and Secretary. |
-| `Tester` / `测试` | QA and reviewer | Reviews code quality, runs tests, finds bugs, checks regression risk, and reports issues by severity. |
-| `Reporter` / `汇报` | Progress reporter | Collects project status from other sessions and produces concise progress reports. |
-| `Observer` / `obs` | Operations observer | Checks whether all sessions are running normally, detects dropped threads, blockers, role drift, or coordination gaps, and helps bring the team back on track. |
+This repository includes a Codex plugin configuration:
 
-## How It Works
+| Item | Path Or Value |
+| --- | --- |
+| Plugin manifest | `.codex-plugin/plugin.json` |
+| Plugin name | `cxworkflow` |
+| Display name | `CXWorkflow` |
+| Category | `Productivity` |
+| Skills directory | `skills/` |
+| Workflow skill | `skills/cxworkflow/SKILL.md` |
 
-1. Start `Commander` first.
-   Commander reads the project, understands the goal, and decomposes the work.
+After installation, Codex can discover the CXWorkflow skill and use it when a user wants to create, explain, or operate a multi-session development team.
 
-2. Start `Secretary`.
-   Secretary records the plan, decisions, task ownership, blockers, and important context.
+## One-Click Setup Prompt
 
-3. Start `Developer`.
-   Developer follows Commander instructions and implements concrete code changes.
-
-4. Start `Tester`.
-   Tester reviews the implementation, runs validation, and reports risks or defects.
-
-5. Start `Reporter`.
-   Reporter summarizes what each thread is doing and gives the human owner a quick project snapshot.
-
-6. Start `Observer`.
-   Observer checks whether each session is fulfilling its role, flags abnormal collaboration patterns, and reports recovery suggestions to Commander and Secretary.
-
-## Recommended One-Click Setup Prompt
-
-Use this prompt in Codex to create the full team in one step:
+<details>
+<summary>Show full prompt</summary>
 
 ```text
 Please create a Codex multi-session development team for the current project. Every session should use the current repository as its working directory.
@@ -176,7 +200,7 @@ Create and name the following sessions:
 Responsibility: You are the project lead. Read the whole project and existing context, understand the goal, break down tasks, define the development route, and assign work to the other sessions. Do not do large implementation work directly. Prioritize decisions, planning, coordination, and acceptance criteria.
 
 2. Secretary
-Responsibility: You are the project secretary. Record project decisions, task status, thread progress, todos, and blockers. Regularly organize project status so multi-session collaboration does not lose context.
+Responsibility: You are the project secretary and the single source of truth. Record decisions, task status, thread progress, todos, blockers, test results, and recovery actions. Any role that needs context should read your records first.
 
 3. Developer
 Responsibility: You are the main developer. Implement code changes, bug fixes, refactors, and features based on Commander instructions. Before each change, understand the code structure. After each change, run necessary validation and report results to Secretary and Commander.
@@ -185,23 +209,23 @@ Responsibility: You are the main developer. Implement code changes, bug fixes, r
 Responsibility: You are the tester and code reviewer. Review code quality, run tests, find bugs, coverage gaps, architectural risks, and regression risks. Report issues to Secretary and Commander by severity.
 
 5. Reporter
-Responsibility: You are the progress reporter. Periodically ask for or read status from other sessions and produce progress reports covering completed work, in-progress work, blockers, risks, and recommended next steps.
+Responsibility: You are the progress reporter. Generate progress reports only at milestones, on user request, or when Commander asks. Read Secretary first and avoid frequent polling of other sessions.
 
 6. obs
-Responsibility: You are the operations observer. Continuously check whether all sessions are running normally: Commander is coordinating, Secretary is recording, Developer is implementing, Tester is validating, and Reporter is synchronizing status. When a session drops off, drifts from its role, misses important context, leaves blockers unhandled, moves away from the project goal, or breaks the collaboration flow, identify the issue, prompt the relevant session to resume its responsibility, and give Commander and Secretary concrete recovery suggestions so the team returns to a normal operating track.
+Responsibility: You are the Workflow Watchdog. Sleep during normal operation. When a session drops off, drifts from its role, misses important context, leaves blockers unhandled, repeatedly fails tests, hits 429, moves away from the project goal, or breaks collaboration flow, identify the issue, prompt the relevant session to resume its responsibility, and give Commander and Secretary concrete recovery suggestions so the team returns to a normal operating track.
 
 After creation, list each session's threadId, title, and responsibility, and pin these sessions if possible.
 ```
 
+</details>
+
 Short version:
 
 ```text
-Please create a Codex multi-session development team for the current project: Commander, Secretary, Developer, Tester, Reporter, and obs. Each session should work in the current repository and separately own project direction, status coordination, implementation, quality review, progress reporting, thread health checks, and recovery when collaboration drifts off track. After creation, list the threadId and purpose for each session, and pin them.
+Please create a Codex multi-session development team for the current project: Commander, Secretary, Developer, Tester, Reporter, and obs. Use event-driven coordination, Secretary as the single source of truth, Commander as the rate-limit-aware sequential scheduler, and obs as a Watchdog for abnormal recovery. After creation, list the threadId and purpose for each session, and pin them.
 ```
 
-## Suggested Reporting Format
-
-Reporter can use this format when summarizing the team:
+## Reporting Format
 
 ```md
 # Project Status
@@ -222,7 +246,7 @@ Reporter can use this format when summarizing the team:
 - ...
 ```
 
-## When To Use This Workflow
+## When To Use
 
 Use CXWorkflow when:
 
@@ -230,6 +254,10 @@ Use CXWorkflow when:
 - The work touches multiple modules or files.
 - You need continuous planning, coding, testing, and reporting.
 - You want Codex to behave more like a development team than a single assistant.
-- You are experimenting with AI-native software team structures.
+- You want to control multi-agent cost and 429 risk.
 
-For small one-file fixes or simple questions, a single Codex session is usually enough.
+Avoid CXWorkflow for:
+
+- Small one-file fixes.
+- One-off simple questions.
+- Tasks that do not need testing, reporting, or long-running context.

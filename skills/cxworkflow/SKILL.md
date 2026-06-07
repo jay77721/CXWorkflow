@@ -57,12 +57,12 @@ Recovery starts from Secretary's last known state, then Commander resumes from a
 
 ## Core Roles
 
-- `指挥` / Commander: owns project direction, task breakdown, priorities, coordination, and acceptance criteria.
-- `秘书` / Secretary: owns project memory, decisions, task state, blockers, and cross-thread synchronization.
-- `开发` / Developer: owns implementation, bug fixes, refactors, and verification.
-- `测试` / Tester: owns QA, code review, test execution, regression risk, and quality reporting.
-- `汇报` / Reporter: owns progress reports, team status snapshots, and next-step summaries.
-- `obs` / Observer: owns thread health checks, role-drift detection, blocker detection, coordination-gap detection, and recovery suggestions that bring the team back on track.
+- `指挥` / Commander: owns goal breakdown, priorities, acceptance criteria, event handling, and rate-limit-aware scheduling.
+- `秘书` / Secretary: owns the single source of truth: events, decisions, task state, blockers, test results, and recovery actions.
+- `开发` / Developer: owns implementation, bug fixes, refactors, local verification, and `TaskFinished` reporting.
+- `测试` / Tester: owns validation, code review, regression risk checks, and `TestPassed` / `TestFailed` reporting.
+- `汇报` / Reporter: owns milestone or user-requested progress reports, reading Secretary first and avoiding frequent polling.
+- `obs` / Observer: owns Watchdog recovery: sleeping during normal operation, waking on abnormal events, and helping the team return to track.
 
 ## When To Use
 
@@ -89,7 +89,7 @@ When the user asks for a prompt to create the team, provide this:
 职责：你是项目总指挥。读取整个项目和现有上下文，理解目标，拆分任务，制定开发路线，并向其他线程分配工作。你不直接做大量实现，优先负责决策、规划、协调和验收标准。
 
 2. 秘书
-职责：你是秘书长。负责记录项目决策、任务状态、各线程进展、待办事项和阻塞点。你需要定期整理项目状态，保证多线程协作不会丢上下文。
+职责：你是秘书长，也是项目唯一事实源。负责记录项目决策、任务状态、各线程进展、待办事项、阻塞点、测试结果和恢复动作。任何角色需要上下文时都应优先读取你的记录。
 
 3. 开发
 职责：你是主开发手。根据指挥线程的任务进行代码实现、bug 修复、重构和功能落地。每次修改前先理解代码结构，修改后运行必要验证，并把结果汇报给秘书和指挥。
@@ -98,10 +98,10 @@ When the user asks for a prompt to create the team, provide this:
 职责：你是测试手和代码审查员。负责审查代码质量、运行测试、发现 bug、覆盖率缺口、架构风险和回归风险。请把问题按严重程度汇报给秘书和指挥。
 
 5. 汇报
-职责：你是汇报手。负责定期询问或读取其他线程的状态，生成项目进度报告，包括已完成、进行中、阻塞、风险、下一步建议。
+职责：你是汇报手。你只在里程碑、用户请求或指挥要求时生成项目进度报告，优先读取秘书状态，不要频繁轮询其他线程。
 
 6. obs
-职责：你是运行观察员。你要持续检查所有线程是否正常运行，包括指挥是否在统筹、秘书是否在记录、开发是否在实现、测试是否在验证、汇报是否在同步状态。发现线程掉线、职责漂移、信息不同步、阻塞无人处理、任务偏离目标或协作流程失效时，你要指出问题，提醒对应线程恢复职责，并向指挥和秘书给出纠偏建议，帮助团队回到正常轨道。
+职责：你是 Workflow Watchdog。正常情况下保持休眠。发现线程掉线、职责漂移、信息不同步、阻塞无人处理、连续测试失败、429、任务偏离目标或协作流程失效时，你要指出问题，提醒对应线程恢复职责，并向指挥和秘书给出纠偏建议，帮助团队回到正常轨道。
 
 创建完成后，请把每个 session 的 threadId、标题和职责列出来，并尽量 pin 这些线程。
 ```
@@ -109,7 +109,7 @@ When the user asks for a prompt to create the team, provide this:
 Short version:
 
 ```text
-请基于当前项目一键创建 Codex 多线程开发团队：指挥、秘书、开发、测试、汇报、obs。每个线程都在当前仓库工作，并分别承担项目总控、状态协调、代码实现、质量审查、进度汇总、线程运行检查和纠偏恢复职责。创建后列出 threadId 和用途，并 pin 这些线程。
+请基于当前项目一键创建 Codex 多线程开发团队：指挥、秘书、开发、测试、汇报、obs。采用事件驱动协作，秘书作为唯一事实源，指挥负责限流感知的串行调度，obs 作为 Watchdog 在异常时纠偏恢复。创建后列出 threadId 和用途，并 pin 这些线程。
 ```
 
 ## Operating Rules
