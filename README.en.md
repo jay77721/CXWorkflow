@@ -23,6 +23,36 @@ After installation, Codex can discover the CXWorkflow skill and use it when a us
 Help me set up a CXWorkflow Codex development team for this project.
 ```
 
+## Installation And Usage
+
+### Use As A Codex Plugin
+
+1. Clone this repository locally.
+
+2. Add this local plugin in the Codex plugin management UI. The plugin root is the repository root:
+
+```text
+<your-local-path>/CXWorkflow
+```
+
+3. After installation, open a new Codex thread so the new plugin skill is loaded.
+
+4. In the new thread, trigger CXWorkflow with a request such as:
+
+```text
+Help me set up a CXWorkflow Codex development team for this project.
+```
+
+or:
+
+```text
+Create a CXWorkflow multi-session development team for the current project.
+```
+
+### Manual Use
+
+If you do not want to install the plugin yet, copy the one-click setup prompt below into Codex directly. The plugin mainly packages this workflow as a reusable skill so Codex can discover and apply it automatically in relevant situations.
+
 ## What It Solves
 
 A single Codex session is convenient for quick edits and questions, but larger projects often overload one thread with planning, implementation, testing, decision memory, and progress reporting.
