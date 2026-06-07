@@ -1,68 +1,77 @@
 # CXWorkflow
 
-CXWorkflow is a multi-session Codex development workflow. It turns one AI coding assistant into a small, persistent development team by giving each Codex thread a clear role, memory boundary, and collaboration responsibility.
+[English README](./README.en.md)
 
-This repository is also a Codex plugin. The plugin manifest lives in `.codex-plugin/plugin.json`, and the reusable workflow skill lives in `skills/cxworkflow/SKILL.md`.
+CXWorkflow 是一套面向 Codex 的多线程开发工作流。它把一个 AI 编程助手拆成一个小型、持久、分工清晰的开发团队，让每个 Codex 线程都有明确角色、上下文边界和协作责任。
 
-Instead of asking one session to plan, code, test, remember every decision, and report progress at the same time, CXWorkflow splits the work across specialized sessions:
+这个仓库同时也是一个 Codex 插件：插件清单位于 `.codex-plugin/plugin.json`，可复用的工作流技能位于 `skills/cxworkflow/SKILL.md`。
 
-- Commander owns direction.
-- Secretary owns memory and coordination.
-- Developer owns implementation.
-- Tester owns quality.
-- Reporter owns status visibility.
-- Observer owns system-level risk review.
+## Codex 插件
 
-This structure is designed for long-running projects, multi-module features, complex refactors, AI-assisted product development, and any repo where a single chat thread becomes too crowded to manage safely.
+本项目新增了 Codex 插件配置，可作为插件安装到 Codex 中使用。
 
-## Team Roles
+- 插件清单：`.codex-plugin/plugin.json`
+- 插件名称：`cxworkflow`
+- 显示名称：`CXWorkflow`
+- 分类：`Productivity`
+- 技能目录：`skills/`
+- 工作流技能：`skills/cxworkflow/SKILL.md`
 
-| Session | Role | Responsibility |
+安装后，Codex 可以自动识别 CXWorkflow 技能，并在用户需要创建、解释或运行多线程开发团队时使用它。插件默认 prompt 是：
+
+```text
+Help me set up a CXWorkflow Codex development team for this project.
+```
+
+## 它解决什么问题
+
+单个 Codex 会话很适合快速修改和问答，但当项目变大时，一个线程往往要同时负责规划、实现、测试、记忆决策和汇报进度，上下文会越来越拥挤。
+
+CXWorkflow 将这些职责拆开：
+
+- 指挥负责方向和任务拆解。
+- 秘书负责项目记忆和状态同步。
+- 开发负责代码实现。
+- 测试负责质量检查和风险发现。
+- 汇报负责进度可视化。
+- 观察者负责从全局审视流程和结构风险。
+
+这套结构适合长期项目、多模块功能、复杂重构、AI 辅助产品开发，以及任何不希望一个聊天线程承担全部工作的代码仓库。
+
+## 团队角色
+
+| 线程 | 角色 | 职责 |
 | --- | --- | --- |
-| `Commander` / `指挥` | Project lead | Understands the whole project, breaks down work, assigns tasks, defines priorities, and makes final direction calls. |
-| `Secretary` / `秘书` | PMO and project memory | Records decisions, tracks task status, keeps cross-thread context synchronized, and prevents project memory loss. |
-| `Developer` / `开发` | Main engineer | Implements features, fixes bugs, refactors code, verifies changes, and reports results back to Commander and Secretary. |
-| `Tester` / `测试` | QA and reviewer | Reviews code quality, runs tests, finds bugs, checks regression risk, and reports issues by severity. |
-| `Reporter` / `汇报` | Progress reporter | Collects project status from other sessions and produces concise progress reports. |
-| `Observer` / `obs` | External observer | Reviews the whole workflow, checks whether the team structure is complete, and identifies missing roles, process gaps, or strategic risks. |
+| `指挥` / `Commander` | 项目负责人 | 理解全局目标，拆解任务，制定优先级，协调其他线程，并定义验收标准。 |
+| `秘书` / `Secretary` | PMO 与项目记忆 | 记录决策、任务状态、阻塞点和跨线程上下文，防止项目记忆丢失。 |
+| `开发` / `Developer` | 主工程师 | 实现功能、修复 bug、重构代码、运行必要验证，并向指挥和秘书汇报结果。 |
+| `测试` / `Tester` | QA 与代码审查 | 审查代码质量，运行测试，发现回归风险、覆盖缺口和架构问题。 |
+| `汇报` / `Reporter` | 进度汇报员 | 汇总各线程状态，生成简洁的项目进度报告。 |
+| `obs` / `Observer` | 外部观察者 | 从系统层面检查团队结构、流程断点、缺失角色和战略风险。 |
 
-## How It Works
+## 工作方式
 
-1. Start `Commander` first.
-   Commander reads the project, understands the goal, and decomposes the work.
+1. 先启动 `指挥`。
+   指挥阅读项目，理解目标，并拆解工作。
 
-2. Start `Secretary`.
-   Secretary records the plan, decisions, task ownership, blockers, and important context.
+2. 启动 `秘书`。
+   秘书记录计划、决策、任务归属、阻塞点和重要上下文。
 
-3. Start `Developer`.
-   Developer follows Commander instructions and implements concrete code changes.
+3. 启动 `开发`。
+   开发根据指挥安排落地具体代码修改。
 
-4. Start `Tester`.
-   Tester reviews the implementation, runs validation, and reports risks or defects.
+4. 启动 `测试`。
+   测试审查实现，运行验证，并按严重程度报告问题。
 
-5. Start `Reporter`.
-   Reporter summarizes what each thread is doing and gives the human owner a quick project snapshot.
+5. 启动 `汇报`。
+   汇报收集各线程状态，为人类负责人提供项目快照。
 
-6. Start `Observer`.
-   Observer checks the whole system from a higher level and points out missing coverage, process weaknesses, or architectural concerns.
+6. 启动 `obs`。
+   观察者从更高层级检查流程覆盖、角色缺口和架构风险。
 
-## Why Use Multi-Session Codex
+## 推荐一键创建 Prompt
 
-A single AI coding thread is convenient, but it often becomes overloaded during larger projects. It may lose track of previous decisions, mix planning with implementation, or under-invest in testing and reporting.
-
-CXWorkflow gives each session a stable job:
-
-- Planning is separated from coding.
-- Project memory is separated from execution.
-- Testing is separated from implementation.
-- Reporting is separated from decision-making.
-- Strategic review is separated from day-to-day progress.
-
-The result is a more compatible, reusable AI development team structure that can be applied to many kinds of software projects.
-
-## Recommended Session Setup Prompt
-
-Use this prompt in Codex to create the full team in one step:
+在 Codex 中使用下面的 prompt，可以一次性创建完整团队：
 
 ```text
 请基于当前项目一键创建 Codex 多线程开发团队，所有线程都使用当前仓库作为工作目录。
@@ -90,43 +99,43 @@ Use this prompt in Codex to create the full team in one step:
 创建完成后，请把每个 session 的 threadId、标题和职责列出来，并尽量 pin 这些线程。
 ```
 
-Short version:
+短版：
 
 ```text
 请基于当前项目一键创建 Codex 多线程开发团队：指挥、秘书、开发、测试、汇报、obs。每个线程都在当前仓库工作，并分别承担项目总控、状态协调、代码实现、质量审查、进度汇总、全局观察职责。创建后列出 threadId 和用途，并 pin 这些线程。
 ```
 
-## Suggested Reporting Format
+## 建议汇报格式
 
-Reporter can use this format when summarizing the team:
+`汇报` 线程可以使用下面的格式总结团队状态：
 
 ```md
-# Project Status
+# 项目状态
 
-## Completed
+## 已完成
 - ...
 
-## In Progress
+## 进行中
 - ...
 
-## Blocked
+## 阻塞
 - ...
 
-## Risks
+## 风险
 - ...
 
-## Next Steps
+## 下一步
 - ...
 ```
 
-## When To Use This Workflow
+## 什么时候使用
 
-Use CXWorkflow when:
+适合使用 CXWorkflow 的场景：
 
-- The project will last more than one session.
-- The work touches multiple modules or files.
-- You need continuous planning, coding, testing, and reporting.
-- You want Codex to behave more like a development team than a single assistant.
-- You are experimenting with AI-native software team structures.
+- 项目会持续超过一个会话。
+- 工作会触及多个模块或多个文件。
+- 需要持续规划、编码、测试和汇报。
+- 希望 Codex 像一个开发团队，而不是单个助手。
+- 正在探索 AI-native 的软件团队结构。
 
-For small one-file fixes or simple questions, a single Codex session is usually enough.
+如果只是小型单文件修复或简单问题，一个普通 Codex 会话通常已经足够。
