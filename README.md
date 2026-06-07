@@ -2,6 +2,8 @@
 
 CXWorkflow is a multi-session Codex development workflow. It turns one AI coding assistant into a small, persistent development team by giving each Codex thread a clear role, memory boundary, and collaboration responsibility.
 
+This repository is also a Codex plugin. The plugin manifest lives in `.codex-plugin/plugin.json`, and the reusable workflow skill lives in `skills/cxworkflow/SKILL.md`.
+
 Instead of asking one session to plan, code, test, remember every decision, and report progress at the same time, CXWorkflow splits the work across specialized sessions:
 
 - Commander owns direction.
