@@ -12,7 +12,7 @@
 
 CXWorkflow is a multi-session Codex development workflow. It does not treat “more agents” as better; it uses minimum necessary concurrency to organize Codex into a predictable, recoverable, long-running development team.
 
-> Core principle: CXWorkflow prioritizes deterministic coordination over maximum parallelism. Agents communicate through events, Secretary acts as the single source of truth, and Commander schedules work using a rate-limit-aware sequential handoff strategy.
+> Core principle: CXWorkflow prioritizes deterministic coordination over maximum parallelism. Agents communicate through events, Secretary acts as the single source of truth and Commander inbox, and Commander only accepts summarized messages forwarded by Secretary while scheduling work using a rate-limit-aware sequential handoff strategy.
 
 ## Quick Start
 
@@ -45,9 +45,11 @@ If you do not want to install the plugin yet, copy the [one-click setup prompt](
 ## Table Of Contents
 
 - [Prerequisites](#prerequisites)
+- [Install And Update](#install-and-update)
 - [Why CXWorkflow](#why-cxworkflow)
 - [Architecture](#architecture)
 - [Core Mechanisms](#core-mechanisms)
+- [Secretary Routing Protocol](#secretary-routing-protocol)
 - [Team Roles](#team-roles)
 - [Load Levels](#load-levels)
 - [Rate Limit Safety](#rate-limit-safety)
@@ -63,6 +65,24 @@ If you do not want to install the plugin yet, copy the [one-click setup prompt](
 - **Codex access**: You need an active Codex account with session creation permissions.
 - **Plugin support**: Your Codex client must support local plugin installation.
 - **Network**: Ensure reliable access to the Codex API (avoid peak hours to reduce 429 risk).
+
+## Install And Update
+
+Use the repository update script so the personal marketplace, plugin source directory, and Codex cache stay aligned:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\update-local-plugin.ps1
+```
+
+The script syncs the plugin to:
+
+```text
+%USERPROFILE%\.agents\plugins\plugins\cxworkflow
+```
+
+and ensures the personal marketplace points at that real source directory. After updating, open a new Codex thread or restart Codex so the plugin skill reloads.
+
+See [INSTALL.md](./INSTALL.md) for details.
 
 ## Why CXWorkflow
 
@@ -84,14 +104,14 @@ CXWorkflow reduces coordination chaos:
 flowchart LR
     User[Human Owner] --> Commander[Commander<br/>Scheduling and decisions]
     Commander --> Developer[Developer<br/>Implementation]
+    Commander --> Secretary[Secretary<br/>Single source of truth]
+    Secretary --> Commander
     Commander --> Tester[Tester<br/>Validation]
     Commander --> Reporter[Reporter<br/>Reporting]
-    Commander --> Secretary[Secretary<br/>Single source of truth]
     Developer --> Secretary
     Tester --> Secretary
     Reporter --> Secretary
-    Watchdog[obs<br/>Watchdog] -.abnormal event.-> Commander
-    Watchdog -.recovery suggestion.-> Secretary
+    Watchdog[obs<br/>Watchdog] -.abnormal event and recovery suggestion.-> Secretary
 ```
 
 ## Core Concepts
@@ -100,7 +120,7 @@ flowchart LR
 
 Roles respond to events instead of constantly polling each other.
 
-> *Flow: Commander creates a task → Developer executes and reports → Tester validates → Secretary records all events → Reporter publishes at milestones → obs watches for anomalies.*
+> *Flow: Commander creates a task -> Developer executes and writes to Secretary -> Tester validates and writes to Secretary -> Reporter reads Secretary at milestones and writes reports back -> obs writes anomalies to Secretary -> Secretary summarizes and forwards to Commander.*
 
 ```mermaid
 sequenceDiagram
@@ -114,29 +134,129 @@ sequenceDiagram
     C->>S: TaskCreated
     C->>D: assign task
     D->>S: TaskFinished
+    S->>C: TaskFinished summary
     C->>T: schedule validation
     T->>S: TestFailed or TestPassed
+    S->>C: validation summary
     C->>D: assign fix when needed
     S->>R: MilestoneReached
-    O-->>C: abnormal event
+    R->>S: ProgressReport
+    O-->>S: abnormal event or recovery suggestion
+    S->>C: prioritized brief
 ```
 
 | Event | Source | Responds |
 | --- | --- | --- |
 | `TaskCreated` | Commander | Developer reads the task and executes |
-| `TaskFinished` | Developer | Commander schedules Tester |
-| `TestFailed` | Tester | Commander assigns Developer a fix |
-| `Blocked` | Any session | Commander decides, Secretary records |
-| `MilestoneReached` | Commander or Secretary | Reporter generates a report |
-| `RateLimitWarning` | Any session | Commander lowers concurrency, obs enters Watchdog mode |
+| `TaskFinished` | Developer | Secretary summarizes and forwards to Commander; Commander schedules Tester |
+| `TestFailed` | Tester | Secretary prioritizes and forwards to Commander; Commander assigns Developer a fix |
+| `Blocked` | Any session | Secretary records and forwards to Commander for a decision |
+| `MilestoneReached` | Commander or Secretary | Reporter reads Secretary, generates a report, and writes it back to Secretary |
+| `RateLimitWarning` | Any session | Secretary aggregates pressure signals and forwards to Commander; Commander lowers concurrency, obs enters Watchdog mode |
 
 ### Secretary Is The Single Source Of Truth
 
 All important events, task states, blockers, test results, decisions, and recovery actions are written to Secretary. Any role that needs context reads Secretary first instead of asking another session directly.
 
+Secretary is also Commander's only inbound channel. Tester, Reporter, obs, and execution sessions do not send status, alerts, or suggestions directly to Commander. They send messages to Secretary first; Secretary deduplicates, prioritizes, adds context, and forwards the brief to Commander.
+
 ### Commander Is The Only Scheduler
 
-Commander decides who works and when. Developer and Tester use sequential handoff. Reporter and obs join only at milestones, blockers, or abnormal events.
+Commander decides who works and when, but only accepts messages forwarded by Secretary. Developer and Tester use sequential handoff. Reporter and obs join only at milestones, blockers, or abnormal events, and their output goes to Secretary first. This keeps Commander focused on planning, scheduling, and acceptance criteria instead of raw test logs, observer alerts, or report drafts.
+
+## Secretary Routing Protocol
+
+### Standard Message Format
+
+Every non-Commander session writes to Secretary using a fixed format so Secretary does not become a free-form text pile:
+
+```text
+Event:
+Source:
+Task:
+Status:
+Severity:
+Evidence:
+Suggested Next:
+Needs Commander: yes/no
+```
+
+Field meanings:
+
+| Field | Meaning |
+| --- | --- |
+| `Event` | Event type, such as `TaskFinished`, `TestFailed`, `Blocked`, `ProgressReport`, or `RateLimitWarning` |
+| `Source` | Source session, such as Developer, Tester, Reporter, or obs |
+| `Task` | Related task or module |
+| `Status` | Current state, short and explicit |
+| `Severity` | `info`, `warning`, `blocking`, or `critical` |
+| `Evidence` | Test output, file path, error summary, or reproduction clue |
+| `Suggested Next` | Suggested next step, not direct scheduling |
+| `Needs Commander` | `yes` only when Commander must decide or change the plan |
+
+### Forwarding Threshold
+
+Secretary does not forward everything to Commander. Only these cases enter the Commander brief:
+
+- A blocker cannot be solved by the current role
+- A test failure, regression risk, or acceptance-criteria impact appears
+- The plan, priority, scope, or next scheduling step must change
+- A milestone is complete and needs Commander acceptance or next-stage scheduling
+- 429, resource pressure, session runaway, or role drift appears
+- The user explicitly asks for a Commander decision
+
+Normal progress, low-risk observations, and report drafts are recorded in Secretary without interrupting Commander.
+
+### Summary Cadence
+
+Secretary controls forwarding frequency by severity:
+
+| Scenario | Secretary Action |
+| --- | --- |
+| `info` normal progress | Record only; batch at stage end |
+| `warning` risk | Merge similar items and forward at the next checkpoint |
+| `blocking` blocker | Forward to Commander immediately |
+| `critical` severe issue | Forward immediately and suggest pausing related sessions |
+| Several small events in a row | Merge into one batch brief |
+
+### Task State Machine
+
+Secretary maintains the state machine for each task. Commander reads state changes and exceptions:
+
+```text
+Planned -> Assigned -> Implementing -> ReadyForTest -> Testing -> Fixing -> Accepted -> Reported
+```
+
+State rules:
+
+| State | Entry Condition |
+| --- | --- |
+| `Planned` | Commander breaks out the task and writes it to Secretary |
+| `Assigned` | Commander assigns an execution session |
+| `Implementing` | Developer starts implementation |
+| `ReadyForTest` | Developer writes `TaskFinished` |
+| `Testing` | Tester starts validation |
+| `Fixing` | Tester writes `TestFailed` and a fix is needed |
+| `Accepted` | Tester writes `TestPassed`, and Commander or acceptance criteria confirm it |
+| `Reported` | Reporter reads Secretary and writes the final report back |
+
+### obs And Reporter Boundaries
+
+obs only detects abnormal workflow state, prompts relevant sessions to resume their responsibilities, and writes recovery suggestions to Secretary. obs does not schedule directly, change the plan directly, or pressure Commander directly.
+
+Reporter is the publishing layer. It only reads Secretary records to generate user-facing progress reports. Reporter does not poll Developer, Tester, or obs, and does not independently reinterpret the true project state.
+
+### Convergence Mode
+
+As a task reaches later stages, Secretary suggests that Commander downgrade active roles so the team gets quieter over time:
+
+| Condition | Convergence Action |
+| --- | --- |
+| Developer completes implementation | Developer stops proactive expansion and only responds to fix tasks |
+| Tester passes validation | Tester stops polling and only keeps a retest entry point |
+| Reporter completes the report | Reporter sleeps until the next milestone or user request |
+| No abnormal events | obs stays asleep |
+| Stable consecutive checkpoints | Commander lowers the load level |
 
 ### obs Is A Watchdog
 
@@ -154,11 +274,11 @@ obs sleeps during normal operation. It wakes when one of these events appears:
 | Session | Role | Primary Responsibility |
 | --- | --- | --- |
 | `Commander` / `指挥` | Project lead | Breaks down goals, schedules sessions, defines priorities and acceptance criteria |
-| `Secretary` / `秘书` | Single source of truth | Records events, task state, decisions, blockers, and recovery actions |
+| `Secretary` / `秘书` | Single source of truth and Commander inbox | Records events, maintains the task state machine, filters messages, and forwards necessary briefs to Commander |
 | `Developer` / `开发` | Main engineer | Implements features, fixes bugs, refactors code, and reports validation results |
-| `Tester` / `测试` | QA and reviewer | Runs tests, reviews quality, and finds regression risks |
-| `Reporter` / `汇报` | Status reporter | Produces progress reports at milestones or on request |
-| `Observer` / `obs` | Watchdog | Detects abnormal workflow state and helps bring the team back on track |
+| `Tester` / `测试` | QA and reviewer | Runs tests, reviews quality, finds regression risks, and writes results to Secretary |
+| `Reporter` / `汇报` | Status reporter | Produces progress reports at milestones or on request, then writes reports to Secretary |
+| `Observer` / `obs` | Watchdog | Detects abnormal workflow state and writes recovery suggestions to Secretary |
 
 ## Load Levels
 
@@ -214,22 +334,31 @@ Please create a Codex multi-session development team for the current project. Ev
 Create and name the following sessions:
 
 1. Commander
-Responsibility: You are the project lead. Read the whole project and existing context, understand the goal, break down tasks, define the development route, and assign work to the other sessions. Do not do large implementation work directly. Prioritize decisions, planning, coordination, and acceptance criteria.
+Responsibility: You are the project lead. Read the whole project and existing context, understand the goal, break down tasks, define the development route, and assign work to the other sessions. Only accept summarized messages forwarded by Secretary; do not accept scattered status directly from Tester, Reporter, obs, or execution sessions. Do not do large implementation work directly. Prioritize decisions, planning, scheduling, and acceptance criteria.
 
 2. Secretary
-Responsibility: You are the project secretary and the single source of truth. Record decisions, task status, thread progress, todos, blockers, test results, and recovery actions. Any role that needs context should read your records first.
+Responsibility: You are the project secretary, the single source of truth, and the Commander inbox. Record decisions, task status, thread progress, todos, blockers, test results, and recovery actions. Tester, Reporter, obs, and execution-session messages come to you first; deduplicate, prioritize, add context, and forward concise briefs to Commander. Any role that needs context should read your records first.
 
 3. Developer
-Responsibility: You are the main developer. Implement code changes, bug fixes, refactors, and features based on Commander instructions. Before each change, understand the code structure. After each change, run necessary validation and report results to Secretary and Commander.
+Responsibility: You are the main developer. Implement code changes, bug fixes, refactors, and features based on Commander instructions. Before each change, understand the code structure. After each change, run necessary validation and report results to Secretary; Secretary forwards the summary to Commander.
 
 4. Tester
-Responsibility: You are the tester and code reviewer. Review code quality, run tests, find bugs, coverage gaps, architectural risks, and regression risks. Report issues to Secretary and Commander by severity.
+Responsibility: You are the tester and code reviewer. Review code quality, run tests, find bugs, coverage gaps, architectural risks, and regression risks. Report issues to Secretary by severity, and do not interrupt Commander directly; Secretary forwards the summary to Commander.
 
 5. Reporter
-Responsibility: You are the progress reporter. Generate progress reports only at milestones, on user request, or when Commander asks. Read Secretary first and avoid frequent polling of other sessions.
+Responsibility: You are the progress reporter. Generate progress reports only at milestones, on user request, or when Commander asks. Read Secretary first and avoid frequent polling of other sessions. Write reports to Secretary first; Secretary decides what to forward to Commander.
 
 6. obs
-Responsibility: You are the Workflow Watchdog. Sleep during normal operation. When a session drops off, drifts from its role, misses important context, leaves blockers unhandled, repeatedly fails tests, hits 429, moves away from the project goal, or breaks collaboration flow, identify the issue, prompt the relevant session to resume its responsibility, and give Commander and Secretary concrete recovery suggestions so the team returns to a normal operating track.
+Responsibility: You are the Workflow Watchdog. Sleep during normal operation. When a session drops off, drifts from its role, misses important context, leaves blockers unhandled, repeatedly fails tests, hits 429, moves away from the project goal, or breaks collaboration flow, identify the issue, prompt the relevant session to resume its responsibility, and send concrete recovery suggestions to Secretary. Secretary forwards the prioritized brief to Commander so the team returns to a normal operating track.
+
+Operating protocol:
+- Non-Commander sessions must write to Secretary with Event, Source, Task, Status, Severity, Evidence, Suggested Next, and Needs Commander.
+- Secretary forwards to Commander only for blockers, test failures, acceptance impact, plan changes, milestone completion, 429s, resource pressure, runaway sessions, role drift, or explicit user decision requests.
+- Normal progress and low-risk observations stay in Secretary and are batched by stage or checkpoint.
+- Secretary maintains the task state machine: Planned -> Assigned -> Implementing -> ReadyForTest -> Testing -> Fixing -> Accepted -> Reported.
+- obs only writes anomalies and recovery suggestions to Secretary; it does not schedule directly or change the plan directly.
+- Reporter only reads Secretary records and writes reports back to Secretary; it does not poll other sessions.
+- Late-stage work enters convergence mode: Developer stops proactive expansion, Tester stops polling, Reporter sleeps after reporting, and obs sleeps unless there is an anomaly.
 
 After creation, list each session's threadId, title, and responsibility, and pin these sessions if possible.
 ```
@@ -239,7 +368,7 @@ After creation, list each session's threadId, title, and responsibility, and pin
 Short version:
 
 ```text
-Please create a Codex multi-session development team for the current project: Commander, Secretary, Developer, Tester, Reporter, and obs. Use event-driven coordination, Secretary as the single source of truth, Commander as the rate-limit-aware sequential scheduler, and obs as a Watchdog for abnormal recovery. After creation, list the threadId and purpose for each session, and pin them.
+Please create a Codex multi-session development team for the current project: Commander, Secretary, Developer, Tester, Reporter, and obs. Use event-driven coordination with Secretary as both the single source of truth and the Commander inbox. Commander only accepts summarized messages forwarded by Secretary, so it can focus on planning, scheduling, and acceptance criteria. Tester, Reporter, and obs send structured messages to Secretary first; Secretary forwards only threshold-matching briefs to Commander, maintains the task state machine, and triggers convergence mode in late stages. obs acts as a Watchdog for abnormal recovery. After creation, list the threadId and purpose for each session, and pin them.
 ```
 
 ## Reporting Format
@@ -270,6 +399,24 @@ Please create a Codex multi-session development team for the current project: Co
 1. Verify the plugin path: In Codex plugin management, confirm the path points to the repository root.
 2. Restart Codex: New plugins require a client restart to load.
 3. Check `plugin.json`: Ensure `.codex-plugin/plugin.json` exists and is valid JSON.
+
+### Plugin Disappears Or Reverts After Restart
+
+This is usually not a version compatibility problem. It often means the personal marketplace points to a plugin source directory that does not exist, so Codex can only read an old cache temporarily.
+
+1. Run the stable update script:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\update-local-plugin.ps1
+```
+
+2. Confirm the source directory exists:
+
+```powershell
+Test-Path "$env:USERPROFILE\.agents\plugins\plugins\cxworkflow"
+```
+
+3. Open a new Codex thread or restart Codex.
 
 ### Sessions Not Responding
 

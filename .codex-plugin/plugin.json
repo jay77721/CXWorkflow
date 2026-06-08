@@ -1,6 +1,6 @@
 {
   "name": "cxworkflow",
-  "version": "0.1.0",
+  "version": "0.1.0+codex.20260608051433",
   "description": "Multi-session Codex development team workflow.",
   "author": {
     "name": "jay77721"
@@ -8,8 +8,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "CXWorkflow",
-    "shortDescription": "Run Codex as a multi-session development team.",
-    "longDescription": "CXWorkflow provides a reusable workflow for creating and coordinating specialized Codex sessions such as Commander, Secretary, Developer, Tester, Reporter, and Observer.",
+    "shortDescription": "Run Codex as a secretary-routed development team.",
+    "longDescription": "CXWorkflow provides a reusable workflow for coordinating specialized Codex sessions such as Commander, Secretary, Developer, Tester, Reporter, and Observer. Secretary is the single source of truth and Commander inbox: all non-Commander sessions use a structured message format, Secretary filters by severity and forwarding thresholds, maintains the task state machine, and forwards concise briefs so Commander can focus on planning and scheduling.",
     "developerName": "jay77721",
     "category": "Productivity",
     "capabilities": [],
