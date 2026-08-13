@@ -12,6 +12,7 @@ written to installed/cache copies by scripts/update_local_plugin.py.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from datetime import date
@@ -92,6 +93,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    import json  # noqa: E402
-
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     sys.exit(main())
