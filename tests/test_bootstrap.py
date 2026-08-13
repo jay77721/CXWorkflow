@@ -48,7 +48,7 @@ class BootstrapTests(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, str(BOOTSTRAP), "--repo-root", str(fake),
              "--skill-dir", str(self.skill_dir), "--with-plugin"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("skip", result.stdout)
@@ -59,7 +59,7 @@ class BootstrapTests(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, str(BOOTSTRAP), "--repo-root", str(bare),
              "--skill-dir", str(self.skill_dir)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8",
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Skill source not found", result.stderr)

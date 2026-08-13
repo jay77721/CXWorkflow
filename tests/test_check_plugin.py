@@ -30,7 +30,7 @@ class CheckPluginTests(unittest.TestCase):
     def run_checker(self, plugin_root):
         return subprocess.run(
             [sys.executable, str(CHECKER), str(plugin_root)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8",
         )
 
     def test_real_repo_passes(self):

@@ -36,6 +36,8 @@ def skill_installed(skill_dir: Path) -> bool:
 
 def install_skill(repo_root: Path, skill_dir: Path) -> bool:
     source = repo_root / "skills" / "cxworkflow"
+    if not (source / "SKILL.md").is_file():
+        raise SystemExit(f"Skill source not found: {source} (is this a CXWorkflow repo?)")
     target = skill_dir / "cxworkflow"
     skill_dir.mkdir(parents=True, exist_ok=True)
     if target.is_dir() and filecmp.dircmp(source, target).same_files and not filecmp.dircmp(source, target).left_only:
@@ -76,4 +78,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     sys.exit(main())

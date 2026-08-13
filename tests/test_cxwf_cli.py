@@ -26,6 +26,7 @@ class CxwfCliTests(unittest.TestCase):
             [sys.executable, str(CXWF), "--root", str(self.repo), *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
         )
         if expect_fail:
             self.assertNotEqual(result.returncode, 0, f"expected failure, got: {result.stdout}")

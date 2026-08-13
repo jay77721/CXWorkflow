@@ -29,7 +29,7 @@ class ReleaseTests(unittest.TestCase):
     def run_release(self, version):
         return subprocess.run(
             [sys.executable, str(RELEASE), version, "--repo-root", str(self.repo)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8",
         )
 
     def test_patch_bump(self):
