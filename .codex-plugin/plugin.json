@@ -1,10 +1,21 @@
 {
   "name": "cxworkflow",
-  "version": "0.1.0+codex.20260608051433",
+  "version": "0.1.0",
   "description": "Multi-session Codex development team workflow.",
   "author": {
-    "name": "jay77721"
+    "name": "jay77721",
+    "url": "https://github.com/jay77721"
   },
+  "homepage": "https://github.com/jay77721/CXWorkflow",
+  "repository": "https://github.com/jay77721/CXWorkflow",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "workflow",
+    "multi-session",
+    "agent-team",
+    "productivity"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "CXWorkflow",
@@ -13,6 +24,13 @@
     "developerName": "jay77721",
     "category": "Productivity",
     "capabilities": [],
-    "defaultPrompt": "Help me set up a CXWorkflow Codex development team for this project."
+    "brandColor": "#2563EB",
+    "composerIcon": "./assets/composer-icon.png",
+    "logo": "./assets/logo.png",
+    "defaultPrompt": [
+      "Set up a CXWorkflow dev team for this project.",
+      "Explain the CXWorkflow role model.",
+      "Check the CXWorkflow team status."
+    ]
   }
 }
