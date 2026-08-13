@@ -2,6 +2,7 @@
 
 <div align="center">
 
+[![CI](https://github.com/jay77721/CXWorkflow/actions/workflows/ci.yml/badge.svg)](https://github.com/jay77721/CXWorkflow/actions/workflows/ci.yml)
 [![Codex Plugin](https://img.shields.io/badge/Codex-Plugin-111827)](#codex-插件)
 [![Workflow](https://img.shields.io/badge/Workflow-Event--Driven-2563eb)](#事件驱动模型)
 [![Rate Limit Safe](https://img.shields.io/badge/Rate%20Limit-Safe-16a34a)](#限流保护)
@@ -180,7 +181,20 @@ sequenceDiagram
 
 Secretary 同时是 Commander 的唯一输入通道。测试、汇报、obs 以及其他执行线程不直接向 Commander 发送状态、告警或建议；它们先把消息汇总给 Secretary，由 Secretary 去重、分级、补齐上下文后转交 Commander。
 
-> **推荐：文件化状态（跨会话可恢复）**。Secretary 会话的对话记忆可能被压缩或丢失。CXWorkflow 提供文件化的事实源：`python3 scripts/cxwf.py init` 会在 `.cxworkflow/` 下创建 `state.json`（任务状态机）、`events.log`（追加式事件日志）、`decisions.md`（指挥决策）和 `briefs/`（秘书简报）。任何角色读写这些文件，而不是依赖单个会话的记忆；`cxwf check` 可以校验事件格式、严重度枚举和状态机转移是否合法。
+> **推荐：文件化状态（跨会话可恢复）**。Secretary 会话的对话记忆可能被压缩或丢失。CXWorkflow 提供文件化的事实源：`python3 scripts/cxwf.py init` 会在 `.cxworkflow/` 下创建 `state.json`（任务状态机）、`events.log`（追加式事件日志）、`decisions.md`（指挥决策）和 `briefs/`（秘书简报）。任何角色读写这些文件，而不是依赖单个会话的记忆；`cxwf check` 可以校验事件格式、严重度枚举、任务必填字段和历史状态机转移是否合法。
+
+常用命令：
+
+```bash
+python3 scripts/cxwf.py init                      # 初始化状态存储
+python3 scripts/cxwf.py task add --title "..."    # 新建任务（Planned）
+python3 scripts/cxwf.py task set T001 --status Implementing --by developer  # 推进状态机
+python3 scripts/cxwf.py event --event TaskFinished --source developer --task T001 --status ReadyForTest
+python3 scripts/cxwf.py message --file msg.txt    # 录入一条 8 字段秘书消息
+python3 scripts/cxwf.py level set 2               # 调整负载等级
+python3 scripts/cxwf.py rate-limit --count 3      # 按 429 次数自动降级
+python3 scripts/cxwf.py check                     # 校验状态一致性
+```
 
 ### Commander 是唯一调度入口
 

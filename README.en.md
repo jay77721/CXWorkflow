@@ -2,6 +2,7 @@
 
 <div align="center">
 
+[![CI](https://github.com/jay77721/CXWorkflow/actions/workflows/ci.yml/badge.svg)](https://github.com/jay77721/CXWorkflow/actions/workflows/ci.yml)
 [![Codex Plugin](https://img.shields.io/badge/Codex-Plugin-111827)](#codex-plugin)
 [![Workflow](https://img.shields.io/badge/Workflow-Event--Driven-2563eb)](#event-driven-model)
 [![Rate Limit Safe](https://img.shields.io/badge/Rate%20Limit-Safe-16a34a)](#rate-limit-safety)

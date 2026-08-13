@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Self-install bootstrap: `AGENTS.md` (auto-loaded by Codex) plus
   `scripts/bootstrap.py`/`bootstrap.sh`/`bootstrap.ps1` that install the skill to
   `~/.codex/skills/` so a fresh Codex can adopt this workflow autonomously.
+- Level-aware one-click prompts: L0/L1/L2 no longer reference Secretary/Reporter/obs
+  sessions that do not exist at those levels; routing rules are generated per level.
+- `cxwf check` hardening: validates required task fields, history transition
+  legality, and history/status consistency (previously hand-edited state passed).
+- `cxwf message`: record a Secretary message in the 8-field format with full
+  validation; `cxwf level set <n>`; `cxwf rate-limit --count <n>` applies the
+  1/3/5 consecutive-429 downgrade policy; `cxwf prompt --out <file>`.
+- MIT `LICENSE` file; CI badge in READMEs.
+- CI: deduplicated test steps, `compileall` syntax check, ubuntu + windows
+  matrix, and a hermetic bootstrap smoke test; new tests for bootstrap,
+  check_plugin, and release.
 - Plugin manifest metadata: homepage, repository, license, keywords, brandColor,
   logo, composer icon, and array-form default prompts.
 
