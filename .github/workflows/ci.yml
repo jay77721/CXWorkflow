@@ -14,10 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No pip cache: this project is intentionally stdlib-only (no
+      # requirements.txt / pyproject.toml), so `cache: pip` would fail.
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
 
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
