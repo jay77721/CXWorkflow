@@ -114,5 +114,65 @@ class CxwfCliTests(unittest.TestCase):
         self.assertIn(".cxworkflow", level3)
 
 
+    def test_message_records_valid_block(self):
+        self.run_cxwf("init")
+        self.run_cxwf("task", "add", "--title", "z")
+        self.run_cxwf("task", "set", "T001", "--status", "Assigned", "--by", "commander")
+        self.run_cxwf("task", "set", "T001", "--status", "Implementing", "--by", "developer")
+        block = (
+            "Event: TaskFinished\n"
+            "Source: Developer\n"
+            "Task: T001\n"
+            "Status: ReadyForTest\n"
+            "Severity: info\n"
+            "Evidence: all tests pass\n"
+            "Suggested Next: schedule tester\n"
+            "Needs Commander: no\n"
+        )
+        self.run_cxwf("message", "--text", block)
+        state = json.loads((self.store / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["tasks"]["T001"]["status"], "ReadyForTest")
+        log = (self.store / "events.log").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(log), 1)
+        self.assertEqual(json.loads(log[0])["event"], "TaskFinished")
+
+    def test_message_missing_field_fails(self):
+        self.run_cxwf("init")
+        self.run_cxwf("message", "--text", "Event: Blocked\nSource: Developer\n", expect_fail=True)
+
+    def test_message_forwarding_requires_suggested_next(self):
+        self.run_cxwf("init")
+        block = (
+            "Event: Blocked\nSource: Developer\nTask: T1\nStatus: \n"
+            "Severity: blocking\nEvidence: x\nSuggested Next: \nNeeds Commander: yes\n"
+        )
+        self.run_cxwf("message", "--text", block, expect_fail=True)
+
+    def test_level_set(self):
+        self.run_cxwf("init")
+        self.run_cxwf("level", "set", "3")
+        state = json.loads((self.store / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["load_level"], 3)
+        self.assertFalse(state["paused"])
+
+    def test_rate_limit_downgrades(self):
+        self.run_cxwf("init")
+        self.run_cxwf("level", "set", "3")
+        self.run_cxwf("rate-limit", "--count", "1")
+        state = json.loads((self.store / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["load_level"], 2)
+        self.run_cxwf("rate-limit", "--count", "5")
+        state = json.loads((self.store / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["load_level"], 0)
+        self.assertTrue(state["paused"])
+
+    def test_prompt_out_writes_file(self):
+        self.run_cxwf("init")
+        out = self.store.parent / "prompt.md"
+        self.run_cxwf("prompt", "--level", "2", "--out", str(out))
+        self.assertTrue(out.is_file())
+        self.assertIn("开发", out.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()
