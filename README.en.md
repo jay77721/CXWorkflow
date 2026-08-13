@@ -71,8 +71,16 @@ If you do not want to install the plugin yet, copy the [one-click setup prompt](
 Use the repository update script so the personal marketplace, plugin source directory, and Codex cache stay aligned:
 
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File .\scripts\update-local-plugin.ps1
 ```
+
+```bash
+# macOS / Linux
+bash scripts/update-local-plugin.sh
+```
+
+Both wrappers delegate to the same cross-platform implementation, `scripts/update_local_plugin.py` (single code path, identical behavior). The repository `plugin.json` keeps a clean semver (for example `0.1.0`); cachebuster versions are only written to installed and cache copies so updates do not dirty the repo diff.
 
 The script syncs the plugin to:
 
@@ -159,6 +167,8 @@ sequenceDiagram
 All important events, task states, blockers, test results, decisions, and recovery actions are written to Secretary. Any role that needs context reads Secretary first instead of asking another session directly.
 
 Secretary is also Commander's only inbound channel. Tester, Reporter, obs, and execution sessions do not send status, alerts, or suggestions directly to Commander. They send messages to Secretary first; Secretary deduplicates, prioritizes, adds context, and forwards the brief to Commander.
+
+> **Recommended: file-backed state (recoverable across sessions).** A Secretary session's conversation memory can be compacted or lost. CXWorkflow provides a file-backed source of truth: `python3 scripts/cxwf.py init` creates `.cxworkflow/` with `state.json` (task state machine), `events.log` (append-only event log), `decisions.md` (Commander decisions), and `briefs/` (Secretary briefs). Any role reads and writes these files instead of relying on a single session's memory; `cxwf check` validates event formats, severity values, and task state transitions.
 
 ### Commander Is The Only Scheduler
 
@@ -320,10 +330,25 @@ This repository includes a Codex plugin configuration:
 | Category | `Productivity` |
 | Skills directory | `skills/` |
 | Workflow skill | `skills/cxworkflow/SKILL.md` |
+| Brand assets | `assets/logo.png`, `assets/composer-icon.png` |
 
 After installation, Codex can discover the CXWorkflow skill and use it when a user wants to create, explain, or operate a multi-session development team.
 
 ## One-Click Setup Prompt
+
+### Create By Load Level (Recommended)
+
+Generate a prompt with the exact number of roles for the load level, avoiding the cost of always creating six sessions:
+
+```bash
+python3 scripts/cxwf.py prompt --level 0   # Commander only
+python3 scripts/cxwf.py prompt --level 1   # Commander + Developer (default)
+python3 scripts/cxwf.py prompt --level 2   # + Tester
+python3 scripts/cxwf.py prompt --level 3   # all roles (+ Secretary, Reporter, obs)
+python3 scripts/cxwf.py prompt --level 1 --lang en
+```
+
+Level 2/3 prompts instruct Secretary to persist state under `.cxworkflow/` and use `scripts/cxwf.py` to advance task state. The full/short prompts below are equivalent to Level 3 for a one-shot full team.
 
 <details>
 <summary>Show full prompt</summary>
@@ -404,11 +429,7 @@ Please create a Codex multi-session development team for the current project: Co
 
 This is usually not a version compatibility problem. It often means the personal marketplace points to a plugin source directory that does not exist, so Codex can only read an old cache temporarily.
 
-1. Run the stable update script:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\update-local-plugin.ps1
-```
+1. Run the stable update script (Windows: `update-local-plugin.ps1`; macOS/Linux: `bash scripts/update-local-plugin.sh`).
 
 2. Confirm the source directory exists:
 

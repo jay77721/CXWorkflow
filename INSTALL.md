@@ -35,16 +35,22 @@ If the source directory is missing, Codex may keep using an old cache until the 
 From the repository root, run:
 
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File .\scripts\update-local-plugin.ps1
 ```
 
-The script:
+```bash
+# macOS / Linux
+bash scripts/update-local-plugin.sh
+```
 
-- Updates `.codex-plugin/plugin.json` with a Codex cachebuster version.
-- Copies the plugin source to `%USERPROFILE%\.agents\plugins\plugins\cxworkflow`.
-- Ensures `%USERPROFILE%\.agents\plugins\marketplace.json` contains the `cxworkflow` entry.
-- Writes a matching cache copy under `%USERPROFILE%\.codex\plugins\cache\personal\cxworkflow\<version>`.
-- Validates all plugin copies when the Codex plugin validator is available.
+Both wrappers call the same cross-platform implementation, `scripts/update_local_plugin.py`. The script:
+
+- Computes a cachebuster version (`<base>+codex.<utc-timestamp>`) **without modifying the repository manifest**, which stays at a clean semver.
+- Copies the plugin source to `~/.agents/plugins/plugins/cxworkflow`.
+- Ensures `~/.agents/plugins/marketplace.json` contains the `cxworkflow` entry.
+- Writes a matching cache copy under `~/.codex/plugins/cache/personal/cxworkflow/<version>`.
+- Validates the repository, source, and cache copies when the Codex plugin validator is available.
 
 After updating, open a new Codex thread or restart Codex so the app reloads the plugin skill.
 
@@ -73,9 +79,15 @@ If the versions differ, run the update script and start a new thread.
 
 ### Manifest Validation
 
-If the validator is installed, run:
+Use the self-contained checker (no dependencies, also used by CI):
 
-```powershell
-python "$env:USERPROFILE\.codex\skills\.system\plugin-creator\scripts\validate_plugin.py" .
+```bash
+python3 scripts/check_plugin.py .
+```
+
+If the official plugin-creator validator is installed, it can additionally be run:
+
+```bash
+python "$HOME/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py" .
 ```
 

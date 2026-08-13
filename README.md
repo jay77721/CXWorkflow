@@ -71,8 +71,16 @@ Help me set up a CXWorkflow Codex development team for this project.
 推荐使用仓库内的稳定更新脚本，让 personal marketplace、插件源目录和 Codex 缓存保持一致：
 
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File .\scripts\update-local-plugin.ps1
 ```
+
+```bash
+# macOS / Linux
+bash scripts/update-local-plugin.sh
+```
+
+两个封装都调用同一个跨平台实现 `scripts/update_local_plugin.py`（单一路径，行为一致）。仓库内的 `plugin.json` 始终保持干净的 semver（如 `0.1.0`），cachebuster 版本只写入安装副本与缓存副本，避免更新产生 git 噪音。
 
 脚本会同步插件到：
 
@@ -159,6 +167,8 @@ sequenceDiagram
 所有关键事件、任务状态、阻塞点、测试结果、决策和恢复动作都写入 Secretary。任何角色需要上下文时，先读 Secretary，而不是直接问其他线程。
 
 Secretary 同时是 Commander 的唯一输入通道。测试、汇报、obs 以及其他执行线程不直接向 Commander 发送状态、告警或建议；它们先把消息汇总给 Secretary，由 Secretary 去重、分级、补齐上下文后转交 Commander。
+
+> **推荐：文件化状态（跨会话可恢复）**。Secretary 会话的对话记忆可能被压缩或丢失。CXWorkflow 提供文件化的事实源：`python3 scripts/cxwf.py init` 会在 `.cxworkflow/` 下创建 `state.json`（任务状态机）、`events.log`（追加式事件日志）、`decisions.md`（指挥决策）和 `briefs/`（秘书简报）。任何角色读写这些文件，而不是依赖单个会话的记忆；`cxwf check` 可以校验事件格式、严重度枚举和状态机转移是否合法。
 
 ### Commander 是唯一调度入口
 
@@ -320,10 +330,25 @@ CXWorkflow 默认采用最小必要并发，降低 API 429 风险。
 | 分类 | `Productivity` |
 | 技能目录 | `skills/` |
 | 工作流技能 | `skills/cxworkflow/SKILL.md` |
+| 品牌资产 | `assets/logo.png`、`assets/composer-icon.png` |
 
 安装后，Codex 可以自动识别 CXWorkflow 技能，并在用户需要创建、解释或运行多线程开发团队时使用它。
 
 ## 一键创建 Prompt
+
+### 按负载等级创建（推荐）
+
+用 `cxwf` 按负载等级生成对应角色数量的一键 Prompt，避免固定创建 6 个 session 的成本：
+
+```bash
+python3 scripts/cxwf.py prompt --level 0   # 仅指挥
+python3 scripts/cxwf.py prompt --level 1   # 指挥 + 开发（默认）
+python3 scripts/cxwf.py prompt --level 2   # + 测试
+python3 scripts/cxwf.py prompt --level 3   # 全角色（+ 秘书、汇报、obs）
+python3 scripts/cxwf.py prompt --level 1 --lang en
+```
+
+Level 2/3 的 Prompt 会要求秘书把状态写入 `.cxworkflow/` 并用 `scripts/cxwf.py` 推进任务状态。下面的完整/短版 Prompt 相当于 Level 3，适合长项目一次性全量建队。
 
 <details>
 <summary>展开完整 Prompt</summary>
@@ -404,11 +429,7 @@ CXWorkflow 默认采用最小必要并发，降低 API 429 风险。
 
 这通常不是版本不兼容，而是 personal marketplace 指向的插件源目录不存在，Codex 只能临时读取旧缓存。
 
-1. 运行稳定更新脚本：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\update-local-plugin.ps1
-```
+1. 运行稳定更新脚本（Windows 用 `update-local-plugin.ps1`，macOS/Linux 用 `bash scripts/update-local-plugin.sh`）。
 
 2. 确认源目录存在：
 
