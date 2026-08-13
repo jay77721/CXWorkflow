@@ -56,7 +56,7 @@ class PromptGoldenTests(unittest.TestCase):
             result = subprocess.run(
                 [sys.executable, str(ROOT / "scripts" / "cxwf.py"), "--root", tmp,
                  "prompt", "--level", "3"],
-                check=True, capture_output=True, text=True,
+                check=True, capture_output=True, text=True, encoding="utf-8",
             )
         for field in FIELDS:
             self.assertIn(field, result.stdout)

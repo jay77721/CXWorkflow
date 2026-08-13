@@ -23,6 +23,7 @@ class BootstrapTests(unittest.TestCase):
             [sys.executable, str(BOOTSTRAP), "--repo-root", str(ROOT), "--skill-dir", str(self.skill_dir), *extra],
             capture_output=True,
             text=True,
+            encoding="utf-8",
         )
 
     def test_installs_skill_into_temp_dir(self):
