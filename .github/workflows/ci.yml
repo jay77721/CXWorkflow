@@ -10,7 +10,11 @@ permissions:
 
 jobs:
   validate-and-test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -20,11 +24,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Syntax check all scripts and tests
+        run: python -m compileall -q scripts tests
+
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
 
       - name: Validate plugin manifest and skills
         run: python scripts/check_plugin.py .
 
-      - name: Verify one-click prompts keep protocol fields
-        run: python -m unittest tests.test_prompts -v
+      - name: Bootstrap smoke test (installs into a temp skill dir)
+        run: python scripts/bootstrap.py --skill-dir "$RUNNER_TEMP/codex-skills"
