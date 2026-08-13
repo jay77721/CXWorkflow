@@ -31,10 +31,10 @@ new Codex thread so the skill is loaded.
   `skills/cxworkflow/SKILL.md` 并按其协议执行；用
   `python3 scripts/cxwf.py prompt --level N` 生成建队 Prompt，**不要自己编**。
 - 任何需要跨会话持久化的状态（任务、事件、决策、简报）：写入 `.cxworkflow/`
-  状态存储（`cxwf.py init / task / event / message / decision / brief /
-  check / level / rate-limit`），不要只依赖单个会话的记忆。其中 `message`
-  用于录入 8 字段秘书消息，`level set` 调整负载等级，`rate-limit --count N`
-  按 429 次数自动降级。
+  状态存储（`cxwf.py init / task add|set|list / event / message / decision /
+  brief / status / check / level / rate-limit`），不要只依赖单个会话的记忆。
+  `message` 录入 8 字段秘书消息，`task list` 和 `status` 查看团队现状，
+  `level set` 调整负载等级，`rate-limit --count N` 按 429 次数自动降级。
 - 任务状态机：`Planned -> Assigned -> Implementing -> ReadyForTest -> Testing
   -> Fixing -> Accepted -> Reported`，用 `cxwf.py task set` 推进，禁止跳步；
   状态转移合法性由 `cxwf.py check` 校验。

@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `cxwf message`: record a Secretary message in the 8-field format with full
   validation; `cxwf level set <n>`; `cxwf rate-limit --count <n>` applies the
   1/3/5 consecutive-429 downgrade policy; `cxwf prompt --out <file>`.
+- CLI ergonomics: `--version`, `task list` table, `status` dashboard (with
+  `--json`), `check --json`, and automatic `--root` discovery from any
+  subdirectory.
+- Robustness: atomic `state.json` writes (temp + `os.replace`) and `check`
+  validation of `load_level` / `paused`.
 - MIT `LICENSE` file; CI badge in READMEs.
 - CI: deduplicated test steps, `compileall` syntax check, ubuntu + windows
   matrix, and a hermetic bootstrap smoke test; new tests for bootstrap,

@@ -188,12 +188,14 @@ Secretary 同时是 Commander 的唯一输入通道。测试、汇报、obs 以�
 ```bash
 python3 scripts/cxwf.py init                      # 初始化状态存储
 python3 scripts/cxwf.py task add --title "..."    # 新建任务（Planned）
+python3 scripts/cxwf.py task list                 # 表格查看任务
 python3 scripts/cxwf.py task set T001 --status Implementing --by developer  # 推进状态机
 python3 scripts/cxwf.py event --event TaskFinished --source developer --task T001 --status ReadyForTest
 python3 scripts/cxwf.py message --file msg.txt    # 录入一条 8 字段秘书消息
+python3 scripts/cxwf.py status                    # 团队仪表盘（--json 机器可读）
 python3 scripts/cxwf.py level set 2               # 调整负载等级
 python3 scripts/cxwf.py rate-limit --count 3      # 按 429 次数自动降级
-python3 scripts/cxwf.py check                     # 校验状态一致性
+python3 scripts/cxwf.py check [--json]            # 校验状态一致性
 ```
 
 ### Commander 是唯一调度入口

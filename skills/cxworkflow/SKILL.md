@@ -30,7 +30,7 @@ Secretary is the workflow database. All important events, task states, blockers,
 
 Secretary is also Commander's only inbound channel. Tester, Reporter, obs, and execution sessions should not send status, alerts, or suggestions directly to Commander. They send messages to Secretary first; Secretary deduplicates, prioritizes, adds context, and forwards the relevant brief to Commander.
 
-**File-backed state (recommended):** prefer persisting state under `.cxworkflow/` with `scripts/cxwf.py` (`init`, `task add/set`, `event`, `message`, `decision`, `brief`, `check`, `level set`, `rate-limit`) so the single source of truth survives session compaction and restarts. `message` records an 8-field Secretary message verbatim; `level set` and `rate-limit` manage load levels and 429 downgrades. `cxwf check` validates event formats, severity values, forwarding rules, and task state transitions. Use the standard message format below for messages between sessions; use the state store for anything that must outlive a session.
+**File-backed state (recommended):** prefer persisting state under `.cxworkflow/` with `scripts/cxwf.py` (`init`, `task add/set/list`, `event`, `message`, `decision`, `brief`, `status`, `check --json`, `level set`, `rate-limit`) so the single source of truth survives session compaction and restarts. `message` records an 8-field Secretary message verbatim; `task list`/`status` give a quick team overview; `level set` and `rate-limit` manage load levels and 429 downgrades. `cxwf check` validates event formats, severity values, forwarding rules, and task state transitions. Use the standard message format below for messages between sessions; use the state store for anything that must outlive a session.
 
 ## Secretary Routing Protocol
 

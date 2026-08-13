@@ -21,26 +21,34 @@ Commands:
   cxwf init [--force]
   cxwf task add --title <t> [--owner <o>] [--id <id>]
   cxwf task set <id> --status <s> [--by <role>]
+  cxwf task list                  # table of tasks
   cxwf event --event <e> --source <s> [--task <id>] [--status <s>] \
         [--severity <sev>] [--evidence <t>] [--suggested-next <t>] \
         [--needs-commander yes|no]
+  cxwf message [--text <block>|--file <path>]   # record an 8-field message
   cxwf decision <text>            # append a Commander decision
   cxwf brief <text>               # write a Secretary brief file
   cxwf get [--id <id>]
-  cxwf check
-  cxwf prompt --level <0-3> [--lang zh|en]   # one-click session prompt
+  cxwf status [--json]            # team status dashboard
+  cxwf check [--json]
+  cxwf level set <0-3>
+  cxwf rate-limit --count <n>
+  cxwf prompt --level <0-3> [--lang zh|en] [--out <file>]  # one-click prompt
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 STATE_VERSION = 1
+
+CXWF_VERSION = "0.1.0"
 
 STATE_MACHINE = [
     "Planned",
@@ -126,10 +134,20 @@ def load_state(root: Path) -> dict:
 
 
 def save_state(root: Path, state: dict) -> None:
+    """Atomically persist state: write a temp file in the same directory, then
+    os.replace so a crash mid-write cannot corrupt state.json (multiple Codex
+    sessions may write concurrently)."""
     state["updated_at"] = now_iso()
     path = state_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    payload = json.dumps(state, ensure_ascii=False, indent=2) + "\n"
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(payload, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 def events_path(root: Path) -> Path:
@@ -414,6 +432,77 @@ def cmd_rate_limit(args: argparse.Namespace, root: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# task list / status
+# ---------------------------------------------------------------------------
+
+
+def cmd_task_list(args: argparse.Namespace, root: Path) -> None:
+    state = load_state(root)
+    tasks = state.get("tasks", {})
+    if not tasks:
+        print("No tasks.")
+        return
+    rows = [
+        (task_id,
+         task.get("title", ""),
+         task.get("owner", ""),
+         task.get("status", ""),
+         task.get("severity", ""),
+         "yes" if task.get("needs_commander") else "no")
+        for task_id, task in tasks.items()
+    ]
+    widths = [max(len(str(row[i])) for row in rows) for i in range(6)]
+    widths = [max(w, len(h)) for w, h in zip(widths, ("ID", "TITLE", "OWNER", "STATUS", "SEV", "CMD?"))]
+    header = f"{'ID':<{widths[0]}}  {'TITLE':<{widths[1]}}  {'OWNER':<{widths[2]}}  {'STATUS':<{widths[3]}}  {'SEV':<{widths[4]}}  {'CMD?':<{widths[5]}}"
+    print(header)
+    print("-" * len(header))
+    for row in rows:
+        print(f"{str(row[0]):<{widths[0]}}  {str(row[1]):<{widths[1]}}  {str(row[2]):<{widths[2]}}  {str(row[3]):<{widths[3]}}  {str(row[4]):<{widths[4]}}  {str(row[5]):<{widths[5]}}")
+
+
+def cmd_status(args: argparse.Namespace, root: Path) -> None:
+    state = load_state(root)
+    tasks = state.get("tasks", {})
+    counts: dict[str, int] = {}
+    for task in tasks.values():
+        counts[task.get("status", "?")] = counts.get(task.get("status", "?"), 0) + 1
+    recent_events = []
+    log = events_path(root)
+    if log.is_file():
+        lines = [line for line in log.read_text(encoding="utf-8").splitlines() if line.strip()]
+        recent_events = [json.loads(line) for line in lines[-5:]]
+    briefs = list((cxwf_dir(root) / "briefs").glob("brief-*.md")) if (cxwf_dir(root) / "briefs").is_dir() else []
+    decisions = cxwf_dir(root) / "decisions.md"
+    decisions_count = len(decisions.read_text(encoding="utf-8").split("## ")) - 1 if decisions.is_file() else 0
+
+    if getattr(args, "json", False):
+        print(json.dumps({
+            "load_level": state.get("load_level"),
+            "paused": state.get("paused"),
+            "task_counts": counts,
+            "total_tasks": len(tasks),
+            "recent_events": recent_events,
+            "open_briefs": len(briefs),
+            "decisions": decisions_count,
+        }, ensure_ascii=False, indent=2))
+        return
+
+    print(f"Load level : L{state.get('load_level')}  (active roles: {', '.join(LEVELS.get(state.get('load_level'), [])) or 'none'})")
+    print(f"Paused     : {'yes' if state.get('paused') else 'no'}")
+    print(f"Tasks      : {len(tasks)} total")
+    for status in STATE_MACHINE:
+        if counts.get(status):
+            print(f"  {status:<14} {counts[status]}")
+    print(f"Briefs     : {len(briefs)} open")
+    print(f"Decisions  : {decisions_count}")
+    if recent_events:
+        print("Recent events:")
+        for rec in recent_events:
+            print(f"  [{rec.get('ts', '')}] {rec.get('event')} <{rec.get('source')}> "
+                  f"task={rec.get('task') or '-'} sev={rec.get('severity')}")
+
+
+# ---------------------------------------------------------------------------
 # check
 # ---------------------------------------------------------------------------
 
@@ -423,6 +512,10 @@ def cmd_check(args: argparse.Namespace, root: Path) -> int:
     state = load_state(root)
     if state.get("version") != STATE_VERSION:
         errors.append(f"state version {state.get('version')} != expected {STATE_VERSION}")
+    if state.get("load_level") not in LEVELS:
+        errors.append(f"invalid load_level {state.get('load_level')!r}; expected one of {sorted(LEVELS)}")
+    if not isinstance(state.get("paused"), bool):
+        errors.append(f"paused must be a boolean, got {state.get('paused')!r}")
 
     required_task_fields = (
         "title", "owner", "status", "severity", "evidence",
@@ -485,13 +578,15 @@ def cmd_check(args: argparse.Namespace, root: Path) -> int:
             if rec.get("needs_commander") and not rec.get("suggested_next"):
                 errors.append(f"events.log:{lineno}: needs_commander=yes requires suggested_next")
 
-    if errors:
+    if getattr(args, "json", False):
+        print(json.dumps({"ok": not errors, "errors": errors}, ensure_ascii=False, indent=2))
+    elif errors:
         print("CXWorkflow check FAILED:")
         for error in errors:
             print(f"  - {error}")
-        return 1
-    print("CXWorkflow check OK")
-    return 0
+    else:
+        print("CXWorkflow check OK")
+    return 1 if errors else 0
 
 
 # ---------------------------------------------------------------------------
@@ -672,7 +767,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="cxwf",
         description="CXWorkflow state CLI — file-backed single source of truth.",
     )
-    parser.add_argument("--root", default=".", help="Repository root (default: current directory).")
+    parser.add_argument("--root", default=None, help="Repository root (default: nearest ancestor with .cxworkflow/).")
+    parser.add_argument("--version", action="version", version=f"cxwf {CXWF_VERSION}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_init = sub.add_parser("init", help="Initialize the .cxworkflow state store.")
@@ -688,6 +784,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_task_set.add_argument("task")
     p_task_set.add_argument("--status", required=True)
     p_task_set.add_argument("--by", default="user")
+    task_sub.add_parser("list", help="List tasks as a table.")
 
     p_event = sub.add_parser("event", help="Append an event and optionally advance a task.")
     p_event.add_argument("--event", required=True)
@@ -708,7 +805,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_get = sub.add_parser("get", help="Print state (optionally one task).")
     p_get.add_argument("--id")
 
-    sub.add_parser("check", help="Validate state and event log.")
+    p_check = sub.add_parser("check", help="Validate state and event log.")
+    p_check.add_argument("--json", action="store_true", help="Machine-readable output.")
+
+    p_status = sub.add_parser("status", help="Show a team status dashboard.")
+    p_status.add_argument("--json", action="store_true", help="Machine-readable output.")
 
     p_prompt = sub.add_parser("prompt", help="Generate a level-parameterized one-click session prompt.")
     p_prompt.add_argument("--level", type=int, required=True, choices=sorted(LEVELS))
@@ -730,10 +831,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def resolve_root(arg_root: str | None) -> Path:
+    """Use the explicit --root, or walk up from the cwd to the nearest ancestor
+    that owns a `.cxworkflow/state.json` so cxwf works from any subdirectory."""
+    if arg_root:
+        return Path(arg_root).resolve()
+    current = Path.cwd()
+    for candidate in (current, *current.parents):
+        if (candidate / ".cxworkflow" / "state.json").is_file():
+            return candidate
+    return current
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    root = Path(args.root).resolve()
+    root = resolve_root(args.root)
 
     try:
         if args.command == "init":
@@ -741,6 +854,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "task":
             if args.task_command == "add":
                 cmd_task_add(args, root)
+            elif args.task_command == "list":
+                cmd_task_list(args, root)
             else:
                 cmd_task_set(args, root)
         elif args.command == "event":
@@ -751,6 +866,8 @@ def main(argv: list[str] | None = None) -> int:
             cmd_brief(args, root)
         elif args.command == "get":
             cmd_get(args, root)
+        elif args.command == "status":
+            cmd_status(args, root)
         elif args.command == "check":
             return cmd_check(args, root)
         elif args.command == "prompt":

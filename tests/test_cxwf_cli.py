@@ -175,5 +175,65 @@ class CxwfCliTests(unittest.TestCase):
         self.assertIn("开发", out.read_text(encoding="utf-8"))
 
 
+    def test_version(self):
+        result = subprocess.run(
+            [sys.executable, str(CXWF), "--version"], capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("cxwf", result.stdout)
+
+    def test_task_list_table(self):
+        self.run_cxwf("init")
+        self.run_cxwf("task", "add", "--title", "甲")
+        self.run_cxwf("task", "add", "--title", "乙")
+        result = self.run_cxwf("task", "list")
+        self.assertIn("T001", result.stdout)
+        self.assertIn("甲", result.stdout)
+        self.assertIn("Planned", result.stdout)
+
+    def test_status_dashboard(self):
+        self.run_cxwf("init")
+        self.run_cxwf("task", "add", "--title", "x")
+        result = self.run_cxwf("status")
+        self.assertIn("Load level", result.stdout)
+        self.assertIn("Tasks      : 1 total", result.stdout)
+
+    def test_status_json(self):
+        self.run_cxwf("init")
+        result = self.run_cxwf("status", "--json")
+        data = json.loads(result.stdout)
+        self.assertIn("load_level", data)
+        self.assertIn("paused", data)
+        self.assertIn("task_counts", data)
+
+    def test_check_json_ok(self):
+        self.run_cxwf("init")
+        result = self.run_cxwf("check", "--json")
+        self.assertEqual(json.loads(result.stdout)["ok"], True)
+
+    def test_check_json_fails_on_bad_load_level(self):
+        self.run_cxwf("init")
+        state_path = self.store / "state.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["load_level"] = 9
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        result = self.run_cxwf("check", "--json", expect_fail=True)
+        data = json.loads(result.stdout)
+        self.assertFalse(data["ok"])
+        self.assertTrue(any("load_level" in e for e in data["errors"]))
+
+    def test_root_auto_discovery_from_subdir(self):
+        self.run_cxwf("init")
+        self.run_cxwf("task", "add", "--title", "deep")
+        nested = self.repo / "a" / "b" / "c"
+        nested.mkdir(parents=True)
+        result = subprocess.run(
+            [sys.executable, str(CXWF), "status"],
+            capture_output=True, text=True, encoding="utf-8", cwd=str(nested),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Tasks      : 1 total", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
