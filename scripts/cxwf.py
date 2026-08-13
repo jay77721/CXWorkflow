@@ -107,7 +107,7 @@ def now_iso() -> str:
 
 
 def empty_state() -> dict:
-    return {"version": STATE_VERSION, "load_level": 1, "updated_at": now_iso(), "tasks": {}}
+    return {"version": STATE_VERSION, "load_level": 1, "paused": False, "updated_at": now_iso(), "tasks": {}}
 
 
 def state_path(root: Path) -> Path:
@@ -298,6 +298,122 @@ def cmd_get(args: argparse.Namespace, root: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# message / level / rate-limit
+# ---------------------------------------------------------------------------
+
+MESSAGE_FIELDS = (
+    "Event", "Source", "Task", "Status", "Severity",
+    "Evidence", "Suggested Next", "Needs Commander",
+)
+
+
+def parse_message_block(text: str) -> dict:
+    """Parse a Secretary message in the 8-field format into a dict."""
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            raise SystemExit(f"Malformed message line (expected `Field: value`): {line!r}")
+        key, _, value = line.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if key in MESSAGE_FIELDS:
+            fields[key] = value
+    return fields
+
+
+def cmd_message(args: argparse.Namespace, root: Path) -> None:
+    if args.file:
+        text = Path(args.file).read_text(encoding="utf-8")
+    elif args.text:
+        text = args.text
+    else:
+        text = sys.stdin.read()
+    fields = parse_message_block(text)
+    missing = [f for f in MESSAGE_FIELDS if not fields.get(f)]
+    if missing:
+        raise SystemExit(f"Message missing required fields: {', '.join(missing)}")
+
+    needs = fields["Needs Commander"].lower()
+    if needs not in {"yes", "no"}:
+        raise SystemExit("Needs Commander must be yes or no")
+    if needs == "yes" and not fields.get("Suggested Next"):
+        raise SystemExit("Needs Commander: yes requires Suggested Next")
+    if fields["Event"] not in EVENTS:
+        raise SystemExit(f"Unknown event: {fields['Event']}")
+    if fields["Source"].lower() not in ROLES:
+        raise SystemExit(f"Unknown source role: {fields['Source']}")
+    if fields["Severity"] not in SEVERITIES:
+        raise SystemExit(f"Unknown severity: {fields['Severity']}")
+
+    append_event(root, {
+        "ts": now_iso(),
+        "event": fields["Event"],
+        "source": fields["Source"].lower(),
+        "task": fields.get("Task") or None,
+        "status": fields.get("Status") or None,
+        "severity": fields["Severity"],
+        "evidence": fields.get("Evidence") or "",
+        "suggested_next": fields.get("Suggested Next") or "",
+        "needs_commander": needs == "yes",
+    })
+
+    task_id = fields.get("Task")
+    status = fields.get("Status")
+    if task_id and status:
+        state = load_state(root)
+        valid_transition(state, task_id, status)
+        apply_transition(state, task_id, status, fields["Source"].lower())
+        save_state(root, state)
+    print(f"Recorded {fields['Event']} from {fields['Source']}")
+
+
+def cmd_level(args: argparse.Namespace, root: Path) -> None:
+    state = load_state(root)
+    state["load_level"] = args.level
+    state["paused"] = False
+    save_state(root, state)
+    print(f"Load level set to L{args.level} (active roles: {', '.join(LEVELS[args.level])})")
+
+
+def cmd_rate_limit(args: argparse.Namespace, root: Path) -> None:
+    state = load_state(root)
+    count = args.count
+    if count < 0:
+        raise SystemExit("--count must be >= 0")
+    if count == 0:
+        print("No rate-limit pressure; load level unchanged.")
+        return
+    if count >= 5:
+        state["load_level"] = 0
+        state["paused"] = True
+        action = "连续 5 次 429：保存状态并暂停工作流，等待冷却后从低等级恢复"
+    elif count >= 3:
+        state["load_level"] = min(state["load_level"], 2)
+        state["paused"] = False
+        action = "连续 3 次 429：停止 Reporter 和 obs，只保留 Commander 和必要执行线程"
+    else:
+        state["load_level"] = max(0, state["load_level"] - 1)
+        state["paused"] = False
+        action = "1 次 429：降低负载等级，暂停非必要线程"
+    save_state(root, state)
+    append_event(root, {
+        "ts": now_iso(),
+        "event": "RateLimitWarning",
+        "source": "obs",
+        "task": None,
+        "status": None,
+        "severity": "warning",
+        "evidence": f"consecutive 429 count={count}",
+        "suggested_next": action,
+        "needs_commander": count >= 3,
+    })
+    print(f"Applied rate-limit policy (count={count}): {action}")
+
+
+# ---------------------------------------------------------------------------
 # check
 # ---------------------------------------------------------------------------
 
@@ -308,12 +424,49 @@ def cmd_check(args: argparse.Namespace, root: Path) -> int:
     if state.get("version") != STATE_VERSION:
         errors.append(f"state version {state.get('version')} != expected {STATE_VERSION}")
 
+    required_task_fields = (
+        "title", "owner", "status", "severity", "evidence",
+        "suggested_next", "needs_commander", "created_at", "history",
+    )
     for task_id, task in state.get("tasks", {}).items():
+        if not isinstance(task, dict):
+            errors.append(f"task {task_id}: must be an object")
+            continue
+        for field in required_task_fields:
+            if field not in task:
+                errors.append(f"task {task_id}: missing required field {field!r}")
         status = task.get("status")
         if status not in STATE_MACHINE:
             errors.append(f"task {task_id}: invalid status {status!r}")
         if task.get("owner") not in ROLES:
             errors.append(f"task {task_id}: invalid owner {task.get('owner')!r}")
+        if task.get("severity") not in SEVERITIES:
+            errors.append(f"task {task_id}: invalid severity {task.get('severity')!r}")
+        if task.get("needs_commander") not in (True, False):
+            errors.append(f"task {task_id}: needs_commander must be a boolean")
+
+        history = task.get("history")
+        if not isinstance(history, list) or not history:
+            errors.append(f"task {task_id}: history must be a non-empty list")
+            continue
+        if not isinstance(history[0], dict) or history[0].get("status") != "Planned":
+            errors.append(f"task {task_id}: history must start at Planned")
+        prev = None
+        for index, entry in enumerate(history):
+            if not isinstance(entry, dict) or "status" not in entry:
+                errors.append(f"task {task_id}: history[{index}] must be an object with status")
+                continue
+            cur = entry["status"]
+            if cur not in STATE_MACHINE:
+                errors.append(f"task {task_id}: history[{index}] invalid status {cur!r}")
+            if prev is not None and cur != prev and cur not in ALLOWED_TRANSITIONS.get(prev, set()):
+                errors.append(f"task {task_id}: invalid history transition {prev} -> {cur}")
+            prev = cur
+        last_status = history[-1].get("status") if isinstance(history[-1], dict) else None
+        if last_status != status:
+            errors.append(
+                f"task {task_id}: history tail {last_status!r} != current status {status!r}"
+            )
 
     log = events_path(root)
     if log.is_file():
@@ -375,6 +528,51 @@ ROLE_BRIEFS = {
     ),
 }
 
+# L0-L2 role briefs avoid referencing Secretary/Reporter/obs sessions that do
+# not exist at those load levels.
+ROLE_BRIEFS_LITE = {
+    "commander": (
+        "职责：你是项目总指挥。读取整个项目和现有上下文，理解目标，拆分任务，制定开发路线，并向其他线程分配工作。"
+        "你负责决策、规划、调度和验收标准；执行线程的进度和结果通过 .cxworkflow/ 状态（scripts/cxwf.py）汇总到你这里。"
+    ),
+    "developer": (
+        "职责：你是主开发手。根据指挥线程的任务进行代码实现、bug 修复、重构和功能落地。每次修改前先理解代码结构，"
+        "修改后运行必要验证，并把结果写入 .cxworkflow/ 状态（scripts/cxwf.py event / task set）。"
+    ),
+    "tester": (
+        "职责：你是测试手和代码审查员。负责审查代码质量、运行测试、发现 bug、覆盖率缺口、架构风险和回归风险。"
+        "请把结果按严重程度写入 .cxworkflow/ 状态（TestPassed / TestFailed 事件），不要直接打断指挥。"
+    ),
+}
+
+
+def role_brief(role: str, level: int) -> str:
+    if level >= 3:
+        return ROLE_BRIEFS[role]
+    return ROLE_BRIEFS_LITE.get(role, ROLE_BRIEFS[role])
+
+
+def protocol_rules(level: int) -> str:
+    """Level-appropriate operating rules; Secretary routing only exists at L3."""
+    if level == 0:
+        return "\n".join([
+            "- 指挥直接决策，无需其他线程。",
+            "- 需要跨会话保留的状态写入 .cxworkflow/（scripts/cxwf.py）。",
+        ])
+    if level == 1:
+        return "\n".join([
+            "- 开发完成任务后把结果写入 .cxworkflow/ 状态（cxwf.py event / task set），指挥在下一轮读取。",
+            "- 任务状态机：Planned -> Assigned -> Implementing -> ReadyForTest -> Testing -> Fixing -> Accepted -> Reported，用 cxwf.py 推进，禁止跳步。",
+        ])
+    if level == 2:
+        return "\n".join([
+            "- 开发完成任务后把结果写入 .cxworkflow/ 状态；测试把结果（TestPassed / TestFailed）也写入 .cxworkflow/。",
+            "- 任务状态机：Planned -> Assigned -> Implementing -> ReadyForTest -> Testing -> Fixing -> Accepted -> Reported，用 cxwf.py 推进，禁止跳步。",
+            "- 测试失败或验收受影响时，由指挥在下一轮决定是否指派修复。",
+        ])
+    return PROTOCOL_RULES
+
+
 PROTOCOL_RULES = (
     "- 非指挥线程写给秘书时必须包含 Event、Source、Task、Status、Severity、Evidence、Suggested Next、Needs Commander。\n"
     "- 秘书只在阻塞、测试失败、验收受影响、计划需调整、里程碑完成、429、资源压力、线程失控、职责漂移或用户明确需要决策时转交指挥。\n"
@@ -394,10 +592,12 @@ def cmd_prompt(args: argparse.Namespace, root: Path) -> None:
     if args.level not in LEVELS:
         raise SystemExit(f"--level must be one of {sorted(LEVELS)}")
     roles = LEVELS[args.level]
-    if args.lang == "en":
-        print(prompt_en(args.level, roles))
+    output = prompt_en(args.level, roles) if args.lang == "en" else prompt_zh(args.level, roles)
+    if args.out:
+        Path(args.out).write_text(output + "\n", encoding="utf-8")
+        print(f"Prompt written to {args.out}")
     else:
-        print(prompt_zh(args.level, roles))
+        print(output)
 
 
 def prompt_zh(level: int, roles: list[str]) -> str:
@@ -409,12 +609,12 @@ def prompt_zh(level: int, roles: list[str]) -> str:
     ]
     for index, role in enumerate(roles, start=1):
         lines.append(f"{index}. {ROLE_NAMES[role]}")
-        lines.append(ROLE_BRIEFS[role])
+        lines.append(role_brief(role, level))
         lines.append("")
     lines.append("运行协议：")
-    lines.append(PROTOCOL_RULES)
+    lines.append(protocol_rules(level))
     lines.append("")
-    if level >= 2:
+    if level == 3:
         lines.append(
             "秘书应把状态写入 .cxworkflow/ 状态目录（state.json / events.log / decisions.md / briefs/），"
             "并在需要时用 scripts/cxwf.py 记录事件、推进任务状态和生成简报。"
@@ -434,12 +634,12 @@ def prompt_en(level: int, roles: list[str]) -> str:
     ]
     for index, role in enumerate(roles, start=1):
         lines.append(f"{index}. {role}")
-        lines.append(ROLE_BRIEFS[role])
+        lines.append(role_brief(role, level))
         lines.append("")
     lines.append("Operating protocol:")
-    lines.append(PROTOCOL_RULES)
+    lines.append(protocol_rules(level))
     lines.append("")
-    if level >= 2:
+    if level == 3:
         lines.append(
             "Secretary should persist state under .cxworkflow/ (state.json / events.log / decisions.md / briefs/) "
             "and use scripts/cxwf.py to record events, advance task state, and write briefs."
@@ -513,6 +713,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_prompt = sub.add_parser("prompt", help="Generate a level-parameterized one-click session prompt.")
     p_prompt.add_argument("--level", type=int, required=True, choices=sorted(LEVELS))
     p_prompt.add_argument("--lang", default="zh", choices=["zh", "en"])
+    p_prompt.add_argument("--out", help="Write the prompt to a file instead of stdout.")
+
+    p_msg = sub.add_parser("message", help="Record a Secretary message in the 8-field format.")
+    p_msg.add_argument("--text", help="Message block as a string.")
+    p_msg.add_argument("--file", help="Read the message block from a file.")
+
+    p_level = sub.add_parser("level", help="Manage the load level.")
+    level_sub = p_level.add_subparsers(dest="level_command", required=True)
+    p_level_set = level_sub.add_parser("set", help="Set the load level (0-3).")
+    p_level_set.add_argument("level", type=int, choices=sorted(LEVELS))
+
+    p_rl = sub.add_parser("rate-limit", help="Apply the 429 rate-limit downgrade policy.")
+    p_rl.add_argument("--count", type=int, required=True, help="Consecutive 429 count.")
 
     return parser
 
@@ -542,6 +755,12 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_check(args, root)
         elif args.command == "prompt":
             cmd_prompt(args, root)
+        elif args.command == "message":
+            cmd_message(args, root)
+        elif args.command == "level":
+            cmd_level(args, root)
+        elif args.command == "rate-limit":
+            cmd_rate_limit(args, root)
     except SystemExit as exc:
         # argparse uses SystemExit too; re-raise with clean message.
         raise exc
