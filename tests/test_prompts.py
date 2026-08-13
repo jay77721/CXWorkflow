@@ -65,5 +65,21 @@ class PromptGoldenTests(unittest.TestCase):
         self.assertIn(".cxworkflow", result.stdout)
 
 
+class AgentsGoldenTests(unittest.TestCase):
+    def test_agents_md_is_codex_operating_manual(self):
+        agents = ROOT / "AGENTS.md"
+        self.assertTrue(agents.is_file(), "AGENTS.md is required so Codex auto-discovers this workflow")
+        text = agents.read_text(encoding="utf-8")
+        for needle in ("bootstrap", "scripts/cxwf.py", "skills/cxworkflow/SKILL.md",
+                       "Event", "Source", "Task", "Status", "Severity", "Evidence",
+                       "Suggested Next", "Needs Commander", "check_plugin.py"):
+            self.assertIn(needle, text, f"AGENTS.md missing: {needle}")
+        normalized = " ".join(text.split())
+        self.assertIn(
+            "Planned -> Assigned -> Implementing -> ReadyForTest -> Testing -> Fixing -> Accepted -> Reported",
+            normalized,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit and golden tests under `tests/` covering the state machine, CLI, and
   protocol fields in the published prompts.
 - Release helper (`scripts/release.py`) for keep-a-changelog version bumps.
+- Self-install bootstrap: `AGENTS.md` (auto-loaded by Codex) plus
+  `scripts/bootstrap.py`/`bootstrap.sh`/`bootstrap.ps1` that install the skill to
+  `~/.codex/skills/` so a fresh Codex can adopt this workflow autonomously.
 - Plugin manifest metadata: homepage, repository, license, keywords, brandColor,
   logo, composer icon, and array-form default prompts.
 

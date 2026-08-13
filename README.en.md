@@ -60,6 +60,22 @@ If you do not want to install the plugin yet, copy the [one-click setup prompt](
 - [When To Use](#when-to-use)
 - [Contributing and License](#contributing-and-license)
 
+## Use From Codex (Self-Install)
+
+This repository is built for Codex itself: a Codex that receives this repo should
+install the skill on its own and follow the protocol in daily development. The
+`AGENTS.md` at the repository root is Codex's entry point (auto-loaded) and
+contains the full bootstrap instructions. To bootstrap manually:
+
+```bash
+bash scripts/bootstrap.sh                 # install the cxworkflow skill to ~/.codex/skills/
+bash scripts/bootstrap.sh --with-plugin   # also sync the local plugin (marketplace + cache)
+# Windows: powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1 [-WithPlugin]
+```
+
+`bootstrap` is idempotent: it skips the copy when already installed and up to
+date. After bootstrapping, open a **new Codex thread** for the skill to load.
+
 ## Prerequisites
 
 - **Codex access**: You need an active Codex account with session creation permissions.

@@ -60,6 +60,18 @@ Help me set up a CXWorkflow Codex development team for this project.
 - [什么时候使用](#什么时候使用)
 - [贡献与许可](#贡献与许可)
 
+## 给 Codex 使用（自主安装）
+
+本仓库本质上是给 Codex 自己用的：拿到仓库的 Codex 应当自主安装 skill 并在日常开发中遵守协议。仓库根目录的 `AGENTS.md` 是 Codex 的入口（Codex 会自动加载它），内容包含完整引导。手动执行引导：
+
+```bash
+bash scripts/bootstrap.sh              # 安装 cxworkflow skill 到 ~/.codex/skills/
+bash scripts/bootstrap.sh --with-plugin  # 同时同步本地插件（marketplace + cache）
+# Windows: powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1 [-WithPlugin]
+```
+
+`bootstrap` 幂等：已安装且内容一致时不会重复写入。安装后**新开 Codex 线程**，skill 即生效。
+
 ## 前置条件
 
 - **Codex 访问权限**：你需要有 Codex 的使用权限。

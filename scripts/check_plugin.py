@@ -113,9 +113,22 @@ def check_skills(plugin_root: Path, errors: list[str]) -> None:
             errors.append(f"skill {skill_root.name}: frontmatter missing `description`")
 
 
+def check_agents(plugin_root: Path, errors: list[str]) -> None:
+    # AGENTS.md is how a fresh Codex learns to bootstrap and use this repo.
+    agents = plugin_root / "AGENTS.md"
+    if not agents.is_file():
+        errors.append("missing AGENTS.md — Codex will not auto-discover this workflow")
+        return
+    text = agents.read_text(encoding="utf-8")
+    for needle in ("bootstrap", "cxwf.py", "SKILL.md", "Event"):
+        if needle not in text:
+            errors.append(f"AGENTS.md should mention `{needle}`")
+
+
 def main() -> int:
     plugin_root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     errors: list[str] = []
+    check_agents(plugin_root, errors)
     check_manifest(plugin_root, errors)
     check_skills(plugin_root, errors)
     for marker in ("[TODO:", "[TODO ]"):
